@@ -13,3 +13,8 @@
 `android/` 가 바뀌면 GitHub Actions 가 빌드해서 [Releases](../../releases/tag/apk) 에 올립니다.
 
 폰에서 받기: https://github.com/happyfamily1984/diary-app/releases/download/apk/diary.apk
+
+## ⚡ 즉시 동기화 (Cloudflare Worker)
+
+`cloudflare/worker.js` 는 1분마다 텔레그램에 새 메시지가 있는지 확인하고, 있으면 일기 저장소의
+GitHub Actions 를 바로 실행시키는 Cloudflare Worker 입니다. 토큰은 코드가 아니라 Worker 의 Secrets 에 넣습니다.
