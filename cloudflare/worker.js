@@ -55,19 +55,52 @@ async function check(env, dispatch) {
   return { pending, action: "started a run" };
 }
 
+// 브라우저 점검용: 각 단계를 실제로 호출해 보고 무엇이 막혔는지 알려 줍니다.
+async function diagnose(env) {
+  const report = {};
+  try {
+    report.telegram_pending = await pendingCount(env);
+  } catch (e) {
+    return { ok: false, step: "텔레그램", error: String(e.message || e), hint: "TELEGRAM_BOT_TOKEN 값을 확인하세요" };
+  }
+  const runs = await github(env, `/actions/workflows/${WORKFLOW}/runs?per_page=1`);
+  if (!runs.ok) {
+    return { ok: false, step: "GitHub 읽기", status: runs.status, error: (await runs.text()).slice(0, 200),
+             hint: "GITHUB_REPO 가 happyfamily1984/daily 인지, 토큰에 daily 저장소가 선택됐는지 확인하세요" };
+  }
+  // 존재하지 않는 워크플로를 실행해 봐서 권한만 확인 (권한 있으면 404, 없으면 403)
+  const probe = await github(env, `/actions/workflows/permission-check-only.yml/dispatches`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref: "main" }),
+  });
+  if (probe.status === 403 || probe.status === 401) {
+    return { ok: false, step: "GitHub 실행 권한", status: probe.status,
+             hint: "토큰 Permissions 에서 Actions 를 'Read and write' 로 바꾸세요" };
+  }
+  report.github = "읽기·실행 권한 OK";
+  report.next = report.telegram_pending > 0
+    ? "새 메시지가 있어요 — 1분 안에 Cron 이 실행을 시작해야 합니다"
+    : "새 메시지 없음";
+  report.cron = "Cron 이 돌고 있는지는 Cloudflare 의 diary-sync → Settings → Trigger Events 에 '* * * * *' 가 있는지로 확인하세요";
+  return { ok: true, ...report };
+}
+
 export default {
   // Cron Trigger: "* * * * *"
   async scheduled(event, env, ctx) {
-    const result = await check(env, true);
-    console.log(JSON.stringify(result));
+    try {
+      console.log(JSON.stringify(await check(env, true)));
+    } catch (e) {
+      console.error("diary-sync failed:", String(e.message || e));
+      throw e;
+    }
   },
 
-  // Worker 주소를 브라우저로 열면 설정이 맞는지 확인만 합니다 (실행은 안 함).
+  // Worker 주소를 브라우저로 열면 설정을 점검합니다 (일기 처리를 실행하지는 않음).
   async fetch(request, env) {
     try {
       const missing = ["TELEGRAM_BOT_TOKEN", "GITHUB_TOKEN", "GITHUB_REPO"].filter((k) => !env[k]);
       if (missing.length) return Response.json({ ok: false, error: `Secrets 없음: ${missing.join(", ")}` });
-      return Response.json({ ok: true, ...(await check(env, false)) });
+      return Response.json(await diagnose(env), { headers: { "Cache-Control": "no-store" } });
     } catch (e) {
       return Response.json({ ok: false, error: String(e.message || e) });
     }
