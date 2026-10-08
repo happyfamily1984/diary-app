@@ -1,0 +1,8 @@
+# Cloudflare Workers 설정 — Cloudflare 에서 이 저장소를 "Import a repository" 로 연결하면 자동 배포됩니다.
+# 토큰들은 여기가 아니라 Cloudflare Worker 의 Settings → Variables and Secrets 에 넣습니다.
+name = "diary-sync"
+main = "cloudflare/worker.js"
+compatibility_date = "2025-09-01"
+
+[triggers]
+crons = ["* * * * *"] # 1분마다 텔레그램 새 메시지 확인
