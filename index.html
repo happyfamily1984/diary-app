@@ -62,6 +62,18 @@
   .small { font-size: .85rem; }
   ol.small { padding-left: 20px; margin: 0 0 12px; }
   a { color: var(--accent); }
+  .entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .icon { border: 0; background: transparent; padding: 2px 6px; font-size: 1rem; opacity: .7; }
+  .icon:hover { opacity: 1; }
+  .editor { border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin: 8px 0; background: var(--bg); }
+  .editor textarea { font: inherit; width: 100%; min-height: 120px; resize: vertical; border: 0; outline: none;
+                     background: transparent; color: var(--text); }
+  .editor input[type=time] { width: auto; margin: 0; padding: 6px 8px; }
+  .editor .row { margin-top: 6px; }
+  .day-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .day-head h2 { margin: 0; }
+  .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+           background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 20px; font-size: .9rem; z-index: 10; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -75,7 +87,7 @@
     <ol class="small muted">
       <li>GitHub → Settings → Developer settings → <b>Fine-grained tokens</b> → Generate new token</li>
       <li>Repository access: <b>Only select repositories</b> → 일기 저장소 하나만 선택</li>
-      <li>Permissions: <b>Contents: Read-only</b>, <b>Actions: Read and write</b> (AI 분석 버튼용)</li>
+      <li>Permissions: <b>Contents: Read and write</b> (앱에서 쓰기·수정·삭제), <b>Actions: Read and write</b> (동기화·AI 분석)</li>
     </ol>
     <label for="repoInput">저장소 (아이디/저장소이름)</label>
     <input id="repoInput" placeholder="myname/daily" autocomplete="off" autocapitalize="off">
@@ -120,6 +132,7 @@
   </section>
 </main>
 
+<div class="toast" id="toast" hidden></div>
 <script>
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
@@ -163,6 +176,93 @@ async function loadMonth(key, force) {
   cache.analysis[key] = analysis;
 }
 
+// ---------- write: add / edit / delete entries in diary/entries/YYYY-MM.json ----------
+function b64decode(b64) {
+  const bin = atob(b64.replace(/\n/g, ""));
+  return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+}
+function b64encode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+const sortEntries = list => list.sort((a, b) =>
+  a.time < b.time ? -1 : a.time > b.time ? 1 : String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0);
+
+// Re-reads the month file, applies `mutate`, and writes it back; retries if the bot wrote meanwhile.
+async function updateMonth(key, mutate, message) {
+  const path = `diary/entries/${key}.json`;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const cur = await gh(`/contents/${path}`);
+    let entries = [], sha;
+    if (cur.ok) { const f = await cur.json(); sha = f.sha; entries = JSON.parse(b64decode(f.content)); }
+    else if (cur.status !== 404) throw new Error(`불러오기 실패 (${cur.status})`);
+    mutate(entries);
+    sortEntries(entries);
+    const res = await gh(`/contents/${path}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, branch: "main", sha,
+                             content: b64encode(JSON.stringify(entries, null, 1) + "\n") }),
+    });
+    if (res.ok) { cache.entries[key] = entries; return; }
+    if (res.status === 409 || res.status === 422) continue;   // file changed underneath us — retry
+    if (res.status === 403 || res.status === 404)
+      throw new Error("저장 권한이 없어요. GitHub 토큰 설정에서 Contents 권한을 'Read and write' 로 바꿔 주세요.");
+    throw new Error(`저장 실패 (${res.status})`);
+  }
+  throw new Error("다른 저장과 겹쳤어요. 잠시 후 다시 시도해 주세요.");
+}
+
+function isoWithOffset(date, hhmm) {
+  const off = -new Date(`${date}T${hhmm}`).getTimezoneOffset();
+  const sign = off >= 0 ? "+" : "-", a = Math.abs(off);
+  return `${date}T${hhmm}${sign}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+}
+const nowHHMM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+let editing = null;   // { id: entry id or "new", date, time, text }
+let saving = false;
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.hidden = true, 2500);
+}
+
+async function saveEditor() {
+  const ed = editing, text = ed.text.trim();
+  if (!text) { toast("내용을 입력해 주세요"); return; }
+  const key = ed.date.slice(0, 7), time = isoWithOffset(ed.date, ed.time);
+  saving = true; renderDay();
+  try {
+    if (ed.id === "new") {
+      await updateMonth(key, list => list.push({ id: "w" + Date.now(), time, text, source: "app" }),
+                        "diary: add entry from app");
+    } else {
+      await updateMonth(key, list => {
+        const e = list.find(x => String(x.id) === String(ed.id));
+        if (!e) throw new Error("이미 삭제된 일기예요.");
+        e.text = text; e.time = time; e.edited = isoWithOffset(todayIso, nowHHMM());
+      }, "diary: edit entry from app");
+    }
+    editing = null; toast("저장했어요");
+  } catch (e) { toast(e.message); }
+  finally { saving = false; render(); }
+}
+
+async function deleteEntry(entry) {
+  if (!confirm("이 일기를 삭제할까요? 되돌릴 수 없어요.")) return;
+  const key = entry.time.slice(0, 7);
+  try {
+    await updateMonth(key, list => {
+      const i = list.findIndex(x => String(x.id) === String(entry.id));
+      if (i >= 0) list.splice(i, 1);
+    }, "diary: delete entry from app");
+    toast("삭제했어요");
+  } catch (e) { toast(e.message); }
+  render();
+}
+
 // ---------- render ----------
 const monthKey = () => `${y}-${pad(m)}`;
 
@@ -181,32 +281,19 @@ function render() {
     const iso = `${key}-${pad(d)}`, list = byDay[iso];
     const b = el("button", "day");
     b.append(el("span", null, d), el("span", "dot", list ? "●".repeat(Math.min(list.length, 3)) : ""));
-    if (list) b.classList.add("has"); else b.disabled = true;
+    if (list) b.classList.add("has");
     if (iso === todayIso) b.classList.add("today");
     if (iso === selected) b.classList.add("sel");
-    b.onclick = () => { selected = iso; tab = "day"; render(); };
+    b.onclick = () => { if (editing && !confirm("작성 중인 내용을 버릴까요?")) return;
+                        editing = null; selected = iso; tab = "day"; render(); };
     grid.append(b);
   }
   $("stats").textContent = entries.length
     ? `기록한 날 ${Object.keys(byDay).length}일 · 일기 ${entries.length}개` : "이 달에는 기록이 없어요";
 
-  // day card
-  if (!selected || selected.slice(0, 7) !== key || !byDay[selected])
-    selected = byDay[todayIso] ? todayIso : Object.keys(byDay).sort().pop() || null;
-  const dayCard = $("dayCard");
-  if (selected) {
-    const [, mm, dd] = selected.split("-").map(Number);
-    const wd = WD[(new Date(selected + "T00:00").getDay() + 6) % 7];
-    dayCard.replaceChildren(el("h2", null, `📖 ${mm}월 ${dd}일 (${wd})`));
-    for (const e of byDay[selected]) {
-      const div = el("div", "entry");
-      div.append(el("span", "time", e.time.slice(11, 16) + (e.from ? " · " + e.from : "") + (e.edited ? " (수정됨)" : "")),
-                 document.createTextNode(e.text));
-      dayCard.append(div);
-    }
-  } else {
-    dayCard.replaceChildren(el("div", "muted", "이 달에 쓴 일기가 없어요. 텔레그램 일기방에 글을 남겨 보세요."));
-  }
+  if (!selected || selected.slice(0, 7) !== key)
+    selected = key === todayIso.slice(0, 7) ? todayIso : Object.keys(byDay).sort().pop() || `${key}-01`;
+  if (!editing) renderDay();
 
   // analysis card
   const a = cache.analysis[key];
@@ -218,8 +305,57 @@ function render() {
 
   $("tabDay").classList.toggle("on", tab === "day");
   $("tabAnalysis").classList.toggle("on", tab === "analysis");
-  dayCard.hidden = tab !== "day";
+  $("dayCard").hidden = tab !== "day";
   $("analysisCard").hidden = tab !== "analysis";
+}
+
+function renderDay() {
+  const dayCard = $("dayCard");
+  const list = (cache.entries[selected.slice(0, 7)] || []).filter(e => e.time.startsWith(selected));
+  const [, mm, dd] = selected.split("-").map(Number);
+  const wd = WD[(new Date(selected + "T00:00").getDay() + 6) % 7];
+  const head = el("div", "day-head");
+  const add = el("button", "small", "＋ 쓰기");
+  add.disabled = !!editing;
+  add.onclick = () => { editing = { id: "new", date: selected,
+    time: selected === todayIso ? nowHHMM() : "21:00", text: "" }; renderDay(); };
+  head.append(el("h2", null, `📖 ${mm}월 ${dd}일 (${wd})`), add);
+  dayCard.replaceChildren(head);
+
+  if (editing?.id === "new") dayCard.append(editorEl());
+  for (const e of list) {
+    if (editing && String(editing.id) === String(e.id)) { dayCard.append(editorEl()); continue; }
+    const div = el("div", "entry"), top = el("div", "entry-head");
+    top.append(el("span", "time", e.time.slice(11, 16) + (e.from ? " · " + e.from : "") + (e.edited ? " (수정됨)" : "")));
+    const tools = el("span");
+    const edit = el("button", "icon", "✏️"), del = el("button", "icon", "🗑");
+    edit.title = "수정"; del.title = "삭제"; edit.disabled = del.disabled = !!editing;
+    edit.onclick = () => { editing = { id: e.id, date: selected, time: e.time.slice(11, 16), text: e.text }; renderDay(); };
+    del.onclick = () => deleteEntry(e);
+    tools.append(edit, del); top.append(tools);
+    div.append(top, document.createTextNode(e.text));
+    dayCard.append(div);
+  }
+  if (!list.length && !editing)
+    dayCard.append(el("div", "muted", "이 날은 기록이 없어요. ＋ 쓰기 로 남기거나 텔레그램 일기방에 보내 보세요."));
+}
+
+function editorEl() {
+  const box = el("div", "editor");
+  const ta = el("textarea"); ta.value = editing.text; ta.placeholder = "오늘 하루는 어땠나요?";
+  ta.oninput = () => { editing.text = ta.value; };
+  const time = el("input"); time.type = "time"; time.value = editing.time;
+  time.onchange = () => { editing.time = time.value || editing.time; };
+  const cancel = el("button", "small", "취소"), save = el("button", "primary small", saving ? "저장 중…" : "저장");
+  cancel.disabled = save.disabled = saving;
+  cancel.onclick = () => { editing = null; renderDay(); };
+  save.onclick = saveEditor;
+  const row = el("div", "row"), btns = el("span");
+  btns.append(cancel, document.createTextNode(" "), save);
+  row.append(time, btns);
+  box.append(ta, row);
+  setTimeout(() => { if (document.activeElement !== ta && !saving) ta.focus(); }, 0);
+  return box;
 }
 
 async function show(force) {
@@ -233,6 +369,8 @@ async function show(force) {
 }
 
 function move(delta) {
+  if (editing && !confirm("작성 중인 내용을 버릴까요?")) return;
+  editing = null;
   m += delta; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
   show();
 }
@@ -257,7 +395,7 @@ async function syncNow(manual) {
       info.textContent = "텔레그램 새 글 가져오는 중…";
       await new Promise(r => setTimeout(r, 10e3));
       await loadMonth(key, true);
-      if (JSON.stringify(cache.entries[key]) !== before) { render(); break; }
+      if (JSON.stringify(cache.entries[key]) !== before) { render(); break; }   // keeps an open editor
     }
     info.textContent = `동기화 ${new Date().toTimeString().slice(0, 5)}`;
   } catch (e) { info.textContent = e.message; }
@@ -315,7 +453,7 @@ function start() {
 $("connect").onclick = connect;
 $("prev").onclick = () => move(-1);
 $("next").onclick = () => move(1);
-$("todayBtn").onclick = () => { y = now.getFullYear(); m = now.getMonth() + 1; selected = todayIso; tab = "day"; show(); };
+$("todayBtn").onclick = () => { if (editing && !confirm("작성 중인 내용을 버릴까요?")) return; editing = null; y = now.getFullYear(); m = now.getMonth() + 1; selected = todayIso; tab = "day"; show(); };
 $("tabDay").onclick = () => { tab = "day"; render(); };
 $("tabAnalysis").onclick = () => { tab = "analysis"; render(); };
 $("analyzeBtn").onclick = analyze;
