@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#faf8f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1917" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="일기장">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>나의 일기장</title>
+<style>
+  :root {
+    --bg: #faf8f5; --card: #ffffff; --text: #2b2a28; --muted: #8a857d;
+    --line: #ece7df; --accent: #c2410c; --accent-soft: #fde7d9; --today: #2563eb; --danger: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1917; --card: #24221f; --text: #ece8e1; --muted: #9a948a;
+      --line: #36332e; --accent: #fb923c; --accent-soft: #3b2a1e; --today: #60a5fa; --danger: #f87171;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.6 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  h1 { font-size: 1.3rem; margin: 0; flex: 1; text-align: center; }
+  h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
+           border-radius: 10px; padding: 6px 12px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  input { font: inherit; width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--line);
+          background: var(--bg); color: var(--text); margin: 4px 0 12px; }
+  label { font-size: .9rem; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .wd { font-size: .8rem; color: var(--muted); padding-bottom: 4px; }
+  .wd:nth-child(6) { color: var(--today); } .wd:nth-child(7) { color: var(--accent); }
+  .day { aspect-ratio: 1; border-radius: 10px; border: 0; padding: 2px; background: transparent;
+         display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .day.has { background: var(--accent-soft); font-weight: 600; }
+  .day.today { outline: 2px solid var(--today); outline-offset: -2px; }
+  .day.sel { background: var(--accent); color: #fff; }
+  .day:disabled { color: var(--muted); opacity: .6; }
+  .dot { font-size: .6rem; line-height: 1; min-height: .6rem; letter-spacing: 1px; }
+  .stats { color: var(--muted); font-size: .9rem; margin-top: 10px; display: flex; justify-content: space-between; }
+  .entry { border-top: 1px solid var(--line); padding: 10px 0; white-space: pre-wrap; word-break: break-word; }
+  .entry:first-of-type { border-top: 0; }
+  .time { color: var(--accent); font-weight: 600; font-size: .9rem; display: block; }
+  .analysis { white-space: pre-wrap; word-break: break-word; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tabs button { flex: 1; }
+  .tabs button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .error { color: var(--danger); font-size: .9rem; white-space: pre-wrap; }
+  .small { font-size: .85rem; }
+  ol.small { padding-left: 20px; margin: 0 0 12px; }
+  a { color: var(--accent); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <!-- 처음 한 번: 저장소와 토큰 입력 -->
+  <section id="setup" class="card" hidden>
+    <h2>📔 일기장 연결</h2>
+    <p class="small muted">텔레그램으로 쓴 일기가 저장되는 GitHub 저장소를 읽어 옵니다.
+      토큰은 이 기기 브라우저에만 저장됩니다.</p>
+    <ol class="small muted">
+      <li>GitHub → Settings → Developer settings → <b>Fine-grained tokens</b> → Generate new token</li>
+      <li>Repository access: <b>Only select repositories</b> → 일기 저장소 하나만 선택</li>
+      <li>Permissions: <b>Contents: Read-only</b>, <b>Actions: Read and write</b> (AI 분석 버튼용)</li>
+    </ol>
+    <label for="repoInput">저장소 (아이디/저장소이름)</label>
+    <input id="repoInput" placeholder="myname/daily" autocomplete="off" autocapitalize="off">
+    <label for="tokenInput">토큰</label>
+    <input id="tokenInput" type="password" placeholder="github_pat_..." autocomplete="off">
+    <div class="error" id="setupError"></div>
+    <button class="primary" id="connect">연결</button>
+  </section>
+
+  <section id="app" hidden>
+    <header>
+      <button id="prev" aria-label="이전 달">‹</button>
+      <h1 id="title"></h1>
+      <button id="next" aria-label="다음 달">›</button>
+    </header>
+
+    <section class="card">
+      <div class="grid" id="grid"></div>
+      <div class="stats"><span id="stats"></span><button id="todayBtn" class="small">오늘</button></div>
+    </section>
+
+    <div class="tabs">
+      <button id="tabDay" class="on">📖 일기</button>
+      <button id="tabAnalysis">🧠 이 달의 분석</button>
+    </div>
+
+    <section class="card" id="dayCard"></section>
+
+    <section class="card" id="analysisCard" hidden>
+      <div class="row"><h2 id="analysisTitle"></h2></div>
+      <div id="analysisBody"></div>
+      <div class="error" id="analysisError"></div>
+      <p><button class="primary" id="analyzeBtn">✨ AI 분석하기</button></p>
+      <p class="small muted" id="analyzeStatus"></p>
+    </section>
+
+    <div class="error" id="loadError"></div>
+    <p class="row small muted">
+      <span id="syncInfo"></span>
+      <span><button id="refresh" class="small">새로고침</button> <button id="logout" class="small">연결 해제</button></span>
+    </p>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const WD = ["월","화","수","목","금","토","일"];
+const pad = n => String(n).padStart(2, "0");
+const el = (tag, cls, text) => { const e = document.createElement(tag);
+  if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+
+let cfg = { repo: store.get("diary.repo"), token: store.get("diary.token") };
+const cache = { entries: {}, analysis: {} };     // month -> data
+const now = new Date();
+const todayIso = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+let y = now.getFullYear(), m = now.getMonth() + 1, selected = null, tab = "day";
+
+// ---------- GitHub API ----------
+async function gh(path, opts = {}) {
+  const res = await fetch(`https://api.github.com/repos/${cfg.repo}${path}`, {
+    cache: "no-store", ...opts,
+    headers: { Authorization: `Bearer ${cfg.token}`, "X-GitHub-Api-Version": "2022-11-28",
+               Accept: "application/vnd.github+json", ...(opts.headers || {}) },
+  });
+  if (res.status === 401) throw new Error("토큰이 올바르지 않거나 만료됐어요. 연결 해제 후 다시 입력해 주세요.");
+  return res;
+}
+async function readFile(path) {
+  const res = await gh(`/contents/${path}`, { headers: { Accept: "application/vnd.github.raw+json" } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`불러오기 실패 (${res.status})`);
+  return res.text();
+}
+async function loadMonth(key, force) {
+  if (!force && key in cache.entries) return;
+  const [entries, analysis] = await Promise.all([
+    readFile(`diary/entries/${key}.json`), readFile(`diary/analysis/${key}.md`)]);
+  cache.entries[key] = entries ? JSON.parse(entries) : [];
+  cache.analysis[key] = analysis;
+}
+
+// ---------- render ----------
+const monthKey = () => `${y}-${pad(m)}`;
+
+function render() {
+  const key = monthKey();
+  const entries = cache.entries[key] || [];
+  const byDay = {};
+  for (const e of entries) (byDay[e.time.slice(0, 10)] ||= []).push(e);
+  $("title").textContent = `${y}년 ${m}월`;
+
+  const grid = $("grid");
+  grid.replaceChildren(...WD.map(w => el("div", "wd", w)));
+  const first = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  for (let i = 0; i < first; i++) grid.append(el("div"));
+  for (let d = 1, days = new Date(y, m, 0).getDate(); d <= days; d++) {
+    const iso = `${key}-${pad(d)}`, list = byDay[iso];
+    const b = el("button", "day");
+    b.append(el("span", null, d), el("span", "dot", list ? "●".repeat(Math.min(list.length, 3)) : ""));
+    if (list) b.classList.add("has"); else b.disabled = true;
+    if (iso === todayIso) b.classList.add("today");
+    if (iso === selected) b.classList.add("sel");
+    b.onclick = () => { selected = iso; tab = "day"; render(); };
+    grid.append(b);
+  }
+  $("stats").textContent = entries.length
+    ? `기록한 날 ${Object.keys(byDay).length}일 · 일기 ${entries.length}개` : "이 달에는 기록이 없어요";
+
+  // day card
+  if (!selected || selected.slice(0, 7) !== key || !byDay[selected])
+    selected = byDay[todayIso] ? todayIso : Object.keys(byDay).sort().pop() || null;
+  const dayCard = $("dayCard");
+  if (selected) {
+    const [, mm, dd] = selected.split("-").map(Number);
+    const wd = WD[(new Date(selected + "T00:00").getDay() + 6) % 7];
+    dayCard.replaceChildren(el("h2", null, `📖 ${mm}월 ${dd}일 (${wd})`));
+    for (const e of byDay[selected]) {
+      const div = el("div", "entry");
+      div.append(el("span", "time", e.time.slice(11, 16) + (e.from ? " · " + e.from : "") + (e.edited ? " (수정됨)" : "")),
+                 document.createTextNode(e.text));
+      dayCard.append(div);
+    }
+  } else {
+    dayCard.replaceChildren(el("div", "muted", "이 달에 쓴 일기가 없어요. 텔레그램 일기방에 글을 남겨 보세요."));
+  }
+
+  // analysis card
+  const a = cache.analysis[key];
+  $("analysisTitle").textContent = `🧠 ${m}월 상황·심리 분석`;
+  $("analysisBody").replaceChildren(a ? el("div", "analysis", a)
+    : el("div", "muted", entries.length ? "아직 분석이 없어요." : "분석할 일기가 없어요."));
+  $("analyzeBtn").textContent = a ? "🔄 다시 분석하기" : "✨ AI 분석하기";
+  $("analyzeBtn").disabled = !entries.length || analyzing;
+
+  $("tabDay").classList.toggle("on", tab === "day");
+  $("tabAnalysis").classList.toggle("on", tab === "analysis");
+  dayCard.hidden = tab !== "day";
+  $("analysisCard").hidden = tab !== "analysis";
+}
+
+async function show(force) {
+  $("loadError").textContent = "";
+  render();
+  try {
+    await loadMonth(monthKey(), force);
+    $("syncInfo").textContent = `불러온 시각 ${new Date().toTimeString().slice(0, 5)}`;
+  } catch (e) { $("loadError").textContent = e.message; }
+  render();
+}
+
+function move(delta) {
+  m += delta; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+  show();
+}
+
+// ---------- AI analysis via GitHub Actions ----------
+let analyzing = false;
+async function analyze() {
+  const key = monthKey(), before = cache.analysis[key];
+  $("analysisError").textContent = "";
+  analyzing = true; render();
+  const status = $("analyzeStatus");
+  try {
+    const res = await gh("/actions/workflows/diary-monthly.yml/dispatches", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main", inputs: { month: key } }),
+    });
+    if (res.status === 403 || res.status === 404)
+      throw new Error("분석 실행 권한이 없어요. 토큰에 Actions: Read and write 권한을 추가해 주세요.");
+    if (!res.ok) throw new Error(`분석 실행 실패 (${res.status})`);
+    const started = Date.now();
+    while (Date.now() - started < 5 * 60e3) {
+      status.textContent = `Gemini 가 분석하는 중… ${Math.round((Date.now() - started) / 1000)}초 (보통 1분 안팎)`;
+      await new Promise(r => setTimeout(r, 10e3));
+      const a = await readFile(`diary/analysis/${key}.md`);
+      if (a && a !== before) { cache.analysis[key] = a; status.textContent = "완료! 텔레그램으로도 보냈어요."; return; }
+    }
+    throw new Error("시간이 오래 걸리고 있어요. 잠시 뒤 새로고침하거나 GitHub Actions 탭을 확인해 주세요.");
+  } catch (e) {
+    $("analysisError").textContent = e.message; status.textContent = "";
+  } finally { analyzing = false; render(); }
+}
+
+// ---------- setup ----------
+async function connect() {
+  const repo = $("repoInput").value.trim().replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
+  const token = $("tokenInput").value.trim();
+  $("setupError").textContent = "";
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) { $("setupError").textContent = "저장소와 토큰을 모두 입력해 주세요."; return; }
+  cfg = { repo, token };
+  try {
+    const res = await gh("");
+    if (!res.ok) throw new Error(res.status === 404 ? "저장소를 찾을 수 없어요. 이름과 토큰의 저장소 권한을 확인해 주세요." : `연결 실패 (${res.status})`);
+  } catch (e) { $("setupError").textContent = e.message; return; }
+  store.set("diary.repo", repo); store.set("diary.token", token);
+  start();
+}
+
+function start() {
+  $("setup").hidden = true; $("app").hidden = false;
+  show();
+}
+
+$("connect").onclick = connect;
+$("prev").onclick = () => move(-1);
+$("next").onclick = () => move(1);
+$("todayBtn").onclick = () => { y = now.getFullYear(); m = now.getMonth() + 1; selected = todayIso; tab = "day"; show(); };
+$("tabDay").onclick = () => { tab = "day"; render(); };
+$("tabAnalysis").onclick = () => { tab = "analysis"; render(); };
+$("analyzeBtn").onclick = analyze;
+$("refresh").onclick = () => show(true);
+$("logout").onclick = () => { if (!confirm("이 기기에서 연결을 해제할까요?")) return;
+  store.del("diary.token"); cfg.token = null; location.reload(); };
+document.addEventListener("visibilitychange", () => { if (!document.hidden && cfg.token) show(true); });
+
+// swipe left/right on the calendar to change month
+let touchX = null;
+$("grid").addEventListener("touchstart", e => { touchX = e.touches[0].clientX; }, { passive: true });
+$("grid").addEventListener("touchend", e => {
+  if (touchX == null) return;
+  const dx = e.changedTouches[0].clientX - touchX; touchX = null;
+  if (Math.abs(dx) > 60) move(dx < 0 ? 1 : -1);
+});
+
+if (cfg.repo) $("repoInput").value = cfg.repo;
+if (cfg.repo && cfg.token) start(); else $("setup").hidden = false;
+</script>
+</body>
+</html>
