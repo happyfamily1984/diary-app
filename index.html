@@ -115,7 +115,7 @@
     <div class="error" id="loadError"></div>
     <p class="row small muted">
       <span id="syncInfo"></span>
-      <span><button id="refresh" class="small">새로고침</button> <button id="logout" class="small">연결 해제</button></span>
+      <span><button id="refresh" class="small">지금 동기화</button> <button id="logout" class="small">연결 해제</button></span>
     </p>
   </section>
 </main>
@@ -237,6 +237,33 @@ function move(delta) {
   show();
 }
 
+// ---------- sync: ask GitHub Actions to fetch new Telegram messages now ----------
+// GitHub's scheduled runs are often delayed for hours, so opening the app triggers one.
+let syncing = false;
+async function syncNow(manual) {
+  const last = Number(store.get("diary.lastSync") || 0);
+  if (syncing || (!manual && Date.now() - last < 2 * 60e3)) return;
+  syncing = true; store.set("diary.lastSync", String(Date.now()));
+  const info = $("syncInfo");
+  try {
+    const res = await gh("/actions/workflows/diary.yml/dispatches", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main" }),
+    });
+    if (!res.ok) { info.textContent = "텔레그램 동기화 실행 권한이 없어요 (토큰 Actions 권한 확인)"; return; }
+    const key = monthKey(), before = JSON.stringify(cache.entries[key] || []);
+    const started = Date.now();
+    while (Date.now() - started < 120e3) {
+      info.textContent = "텔레그램 새 글 가져오는 중…";
+      await new Promise(r => setTimeout(r, 10e3));
+      await loadMonth(key, true);
+      if (JSON.stringify(cache.entries[key]) !== before) { render(); break; }
+    }
+    info.textContent = `동기화 ${new Date().toTimeString().slice(0, 5)}`;
+  } catch (e) { info.textContent = e.message; }
+  finally { syncing = false; }
+}
+
 // ---------- AI analysis via GitHub Actions ----------
 let analyzing = false;
 async function analyze() {
@@ -282,7 +309,7 @@ async function connect() {
 
 function start() {
   $("setup").hidden = true; $("app").hidden = false;
-  show();
+  show().then(() => syncNow(false));
 }
 
 $("connect").onclick = connect;
@@ -292,10 +319,12 @@ $("todayBtn").onclick = () => { y = now.getFullYear(); m = now.getMonth() + 1; s
 $("tabDay").onclick = () => { tab = "day"; render(); };
 $("tabAnalysis").onclick = () => { tab = "analysis"; render(); };
 $("analyzeBtn").onclick = analyze;
-$("refresh").onclick = () => show(true);
+$("refresh").onclick = () => show(true).then(() => syncNow(true));
 $("logout").onclick = () => { if (!confirm("이 기기에서 연결을 해제할까요?")) return;
   store.del("diary.token"); cfg.token = null; location.reload(); };
-document.addEventListener("visibilitychange", () => { if (!document.hidden && cfg.token) show(true); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && cfg.token && !$("app").hidden) show(true).then(() => syncNow(false));
+});
 
 // swipe left/right on the calendar to change month
 let touchX = null;
