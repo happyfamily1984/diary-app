@@ -3,6 +3,7 @@
 name = "diary-sync"
 main = "cloudflare/worker.js"
 compatibility_date = "2025-09-01"
+keep_vars = true # 대시보드에서 넣은 변수를 배포할 때 지우지 않음
 
 [triggers]
 crons = ["* * * * *"] # 1분마다 텔레그램 새 메시지 확인
