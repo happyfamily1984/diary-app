@@ -139,7 +139,7 @@
 <div class="toast" id="toast" hidden></div>
 <script>
 // Bump on every change: open apps compare this with the published page and reload themselves.
-const APP_VERSION = "2026-10-09.1";
+const APP_VERSION = "2026-10-10.1";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
 const pad = n => String(n).padStart(2, "0");
@@ -169,7 +169,8 @@ async function gh(path, opts = {}) {
   return res;
 }
 async function readFile(path) {
-  const res = await gh(`/contents/${path}`, { headers: { Accept: "application/vnd.github.raw+json" } });
+  const res = await gh(`/contents/${path}?ref=main&raw=${Date.now()}`,
+                       { headers: { Accept: "application/vnd.github.raw+json" } });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`불러오기 실패 (${res.status})`);
   return res.text();
@@ -196,14 +197,29 @@ function b64encode(str) {
 const sortEntries = list => list.sort((a, b) =>
   a.time < b.time ? -1 : a.time > b.time ? 1 : String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0);
 
+// Latest entries + blob sha of a month file (sha is needed to overwrite it).
+async function readForWrite(path) {
+  const res = await gh(`/contents/${path}?ref=main&meta=${Date.now()}`);
+  if (res.status === 404) return { entries: [], sha: undefined };
+  if (!res.ok) throw new Error(`불러오기 실패 (${res.status})`);
+  const f = await res.json();
+  if (Array.isArray(f)) {
+    // Some WebViews hand back the raw file instead of the metadata; look the sha up in the folder.
+    const dir = path.slice(0, path.lastIndexOf("/"));
+    const list = await (await gh(`/contents/${dir}?ref=main&dir=${Date.now()}`)).json();
+    const item = Array.isArray(list) && list.find(x => x.path === path);
+    if (!item) throw new Error("파일 정보를 찾지 못했어요. 잠시 후 다시 시도해 주세요.");
+    return { entries: f, sha: item.sha };
+  }
+  const text = f.encoding === "base64" && f.content ? b64decode(f.content) : await readFile(path);
+  return { entries: text ? JSON.parse(text) : [], sha: f.sha };
+}
+
 // Re-reads the month file, applies `mutate`, and writes it back; retries if the bot wrote meanwhile.
 async function updateMonth(key, mutate, message) {
   const path = `diary/entries/${key}.json`;
   for (let attempt = 0; attempt < 4; attempt++) {
-    const cur = await gh(`/contents/${path}`);
-    let entries = [], sha;
-    if (cur.ok) { const f = await cur.json(); sha = f.sha; entries = JSON.parse(b64decode(f.content)); }
-    else if (cur.status !== 404) throw new Error(`불러오기 실패 (${cur.status})`);
+    const { entries, sha } = await readForWrite(path);
     mutate(entries);
     sortEntries(entries);
     const res = await gh(`/contents/${path}`, {
