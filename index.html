@@ -138,6 +138,8 @@
 
 <div class="toast" id="toast" hidden></div>
 <script>
+// Bump on every change: open apps compare this with the published page and reload themselves.
+const APP_VERSION = "2026-10-09.1";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
 const pad = n => String(n).padStart(2, "0");
@@ -446,6 +448,18 @@ async function analyze() {
   } finally { analyzing = false; render(); }
 }
 
+// ---------- self-update: GitHub Pages / WebView caches can serve an old page for a while ----------
+let lastVersionCheck = 0;
+async function checkForUpdate() {
+  if (Date.now() - lastVersionCheck < 60e3 || location.protocol === "file:") return;
+  lastVersionCheck = Date.now();
+  try {
+    const res = await fetch(`${location.pathname}?v=${Date.now()}`, { cache: "no-store" });
+    const live = (await res.text()).match(/APP_VERSION = "([^"]+)"/);
+    if (live && live[1] !== APP_VERSION && !editing) location.reload();
+  } catch {}
+}
+
 // ---------- setup ----------
 async function connect() {
   const repo = $("repoInput").value.trim().replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
@@ -462,6 +476,7 @@ async function connect() {
 }
 
 function start() {
+  checkForUpdate();
   $("setup").hidden = true; $("app").hidden = false;
   show().then(() => syncNow(false));
 }
@@ -477,6 +492,7 @@ $("refresh").onclick = () => show(true).then(() => syncNow(true));
 $("logout").onclick = () => { if (!confirm("이 기기에서 연결을 해제할까요?")) return;
   store.del("diary.token"); cfg.token = null; location.reload(); };
 document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) checkForUpdate();
   if (!document.hidden && cfg.token && !$("app").hidden) show(true).then(() => syncNow(false));
 });
 
