@@ -16,10 +16,12 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 
 /** Opens the diary web app full screen; the page itself holds all features. */
 public class MainActivity extends Activity {
     private WebView webView;
+    private FrameLayout root;
     private String appUrl;
 
     @Override
@@ -53,8 +55,14 @@ public class MainActivity extends Activity {
             }
         });
 
+        // The WebView sits in a plain container; keyboard/system-bar insets are applied to the
+        // container, never to the WebView itself (padding a WebView breaks the keyboard connection).
+        root = new FrameLayout(this);
+        root.setBackgroundColor(getColor(R.color.background));
+        root.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         applySystemBars();
-        setContentView(webView);
+        setContentView(root);
         if (savedInstanceState != null) webView.restoreState(savedInstanceState);
         else webView.loadUrl(appUrl);
     }
@@ -69,8 +77,8 @@ public class MainActivity extends Activity {
             w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
                     | (Build.VERSION.SDK_INT >= 26 ? View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0));
         }
-        // Android 15 draws edge-to-edge: keep the page clear of the status/navigation bars.
-        webView.setOnApplyWindowInsetsListener((v, insets) -> {
+        // Android 15 draws edge-to-edge: keep the page clear of the status/navigation bars and keyboard.
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets b = insets.getInsets(
                         WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
