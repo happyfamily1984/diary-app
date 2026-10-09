@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="일기장">
 <meta name="robots" content="noindex">
 <link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>나의 일기장</title>
@@ -25,11 +26,14 @@
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { margin: 0; background: var(--bg); color: var(--text);
-         font: 16px/1.6 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+         font: 16px/1.6 "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo",
+               Roboto, "Noto Sans KR", sans-serif;
+         font-variant-numeric: normal; -webkit-text-size-adjust: 100%; }
   main { max-width: 720px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); }
   header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
   h1 { font-size: 1.3rem; margin: 0; flex: 1; text-align: center; }
   h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  textarea, input { font-family: inherit; }
   button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
            border-radius: 10px; padding: 6px 12px; cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -317,8 +321,8 @@ function renderDay() {
   const head = el("div", "day-head");
   const add = el("button", "small", "＋ 쓰기");
   add.disabled = !!editing;
-  add.onclick = () => { editing = { id: "new", date: selected,
-    time: selected === todayIso ? nowHHMM() : "21:00", text: "" }; renderDay(); };
+  add.onclick = () => openEditor({ id: "new", date: selected,
+    time: selected === todayIso ? nowHHMM() : "21:00", text: "" });
   head.append(el("h2", null, `📖 ${mm}월 ${dd}일 (${wd})`), add);
   dayCard.replaceChildren(head);
 
@@ -330,7 +334,7 @@ function renderDay() {
     const tools = el("span");
     const edit = el("button", "icon", "✏️"), del = el("button", "icon", "🗑");
     edit.title = "수정"; del.title = "삭제"; edit.disabled = del.disabled = !!editing;
-    edit.onclick = () => { editing = { id: e.id, date: selected, time: e.time.slice(11, 16), text: e.text }; renderDay(); };
+    edit.onclick = () => openEditor({ id: e.id, date: selected, time: e.time.slice(11, 16), text: e.text });
     del.onclick = () => deleteEntry(e);
     tools.append(edit, del); top.append(tools);
     div.append(top, document.createTextNode(e.text));
@@ -340,10 +344,23 @@ function renderDay() {
     dayCard.append(el("div", "muted", "이 날은 기록이 없어요. ＋ 쓰기 로 남기거나 텔레그램 일기방에 보내 보세요."));
 }
 
+// Called directly from the tap so the keyboard attaches to the textarea right away.
+function openEditor(state) {
+  editing = state;
+  renderDay();
+  const ta = $("dayCard").querySelector(".editor textarea");
+  if (!ta) return;
+  ta.focus();
+  const end = ta.value.length;
+  ta.setSelectionRange(end, end);
+}
+
 function editorEl() {
   const box = el("div", "editor");
   const ta = el("textarea"); ta.value = editing.text; ta.placeholder = "오늘 하루는 어땠나요?";
+  ta.lang = "ko"; ta.spellcheck = false;
   ta.oninput = () => { editing.text = ta.value; };
+  ta.addEventListener("compositionend", () => { editing.text = ta.value; });
   const time = el("input"); time.type = "time"; time.value = editing.time;
   time.onchange = () => { editing.time = time.value || editing.time; };
   const cancel = el("button", "small", "취소"), save = el("button", "primary small", saving ? "저장 중…" : "저장");
@@ -354,7 +371,6 @@ function editorEl() {
   btns.append(cancel, document.createTextNode(" "), save);
   row.append(time, btns);
   box.append(ta, row);
-  setTimeout(() => { if (document.activeElement !== ta && !saving) ta.focus(); }, 0);
   return box;
 }
 
