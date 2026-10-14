@@ -139,7 +139,7 @@
 <div class="toast" id="toast" hidden></div>
 <script>
 // Bump on every change: open apps compare this with the published page and reload themselves.
-const APP_VERSION = "2026-10-10.1";
+const APP_VERSION = "2026-10-14.1";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
 const pad = n => String(n).padStart(2, "0");
@@ -362,23 +362,38 @@ function renderDay() {
     dayCard.append(el("div", "muted", "이 날은 기록이 없어요. ＋ 쓰기 로 남기거나 텔레그램 일기방에 보내 보세요."));
 }
 
-// Called directly from the tap so the keyboard attaches to the textarea right away.
+// Opens the editor without focusing it: on Android WebViews a script-made focus can leave the
+// keyboard attached to a stale input connection (caret shows, typing does nothing). A real tap
+// on the textarea always connects the keyboard properly.
 function openEditor(state) {
   editing = state;
   renderDay();
   const ta = $("dayCard").querySelector(".editor textarea");
-  if (!ta) return;
-  ta.focus();
-  const end = ta.value.length;
-  ta.setSelectionRange(end, end);
+  if (ta) ta.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
 function editorEl() {
   const box = el("div", "editor");
-  const ta = el("textarea"); ta.value = editing.text; ta.placeholder = "오늘 하루는 어땠나요?";
+  const ta = el("textarea"); ta.value = editing.text;
+  ta.placeholder = "여기를 눌러 쓰기 시작하세요";
   ta.lang = "ko"; ta.spellcheck = false;
-  ta.oninput = () => { editing.text = ta.value; };
+  ta.oninput = () => { editing.text = ta.value; typed = 0; };
+  ta.addEventListener("compositionupdate", () => { typed = 0; });
   ta.addEventListener("compositionend", () => { editing.text = ta.value; });
+  // Safety net: keys arrive but no text does → the keyboard lost its connection; reconnect it.
+  let typed = 0, healed = false;
+  ta.addEventListener("keydown", e => {
+    if (healed || e.key === "Backspace" || e.key === "Enter" || e.key === "Tab") return;
+    typed++;
+    setTimeout(() => {
+      if (typed >= 2 && !healed && document.activeElement === ta) {
+        healed = true;
+        const pos = ta.selectionStart;
+        ta.blur();
+        setTimeout(() => { ta.focus(); ta.setSelectionRange(pos, pos); }, 60);
+      }
+    }, 500);
+  });
   const time = el("input"); time.type = "time"; time.value = editing.time;
   time.onchange = () => { editing.time = time.value || editing.time; };
   const cancel = el("button", "small", "취소"), save = el("button", "primary small", saving ? "저장 중…" : "저장");
