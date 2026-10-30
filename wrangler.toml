@@ -6,4 +6,4 @@ compatibility_date = "2025-09-01"
 keep_vars = true # 대시보드에서 넣은 변수를 배포할 때 지우지 않음
 
 [triggers]
-crons = ["* * * * *"] # 1분마다 텔레그램 새 메시지 확인
+crons = [] # Cron 을 쓰지 않음 — 텔레그램 웹훅으로 메시지가 올 때만 실행 (계정 공용 Cron 한도를 쓰지 않음)

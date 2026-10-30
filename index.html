@@ -91,7 +91,7 @@
     <ol class="small muted">
       <li>GitHub → Settings → Developer settings → <b>Fine-grained tokens</b> → Generate new token</li>
       <li>Repository access: <b>Only select repositories</b> → 일기 저장소 하나만 선택</li>
-      <li>Permissions: <b>Contents: Read and write</b> (앱에서 쓰기·수정·삭제), <b>Actions: Read and write</b> (동기화·AI 분석)</li>
+      <li>Permissions: <b>Contents: Read and write</b> (앱에서 쓰기·수정·삭제·AI 분석 요청)</li>
     </ol>
     <label for="repoInput">저장소 (아이디/저장소이름)</label>
     <input id="repoInput" placeholder="myname/daily" autocomplete="off" autocapitalize="off">
@@ -131,7 +131,7 @@
     <div class="error" id="loadError"></div>
     <p class="row small muted">
       <span id="syncInfo"></span>
-      <span><button id="refresh" class="small">지금 동기화</button> <button id="logout" class="small">연결 해제</button></span>
+      <span><button id="refresh" class="small">새로고침</button> <button id="logout" class="small">연결 해제</button></span>
     </p>
   </section>
 </main>
@@ -139,7 +139,7 @@
 <div class="toast" id="toast" hidden></div>
 <script>
 // Bump on every change: open apps compare this with the published page and reload themselves.
-const APP_VERSION = "2026-10-14.1";
+const APP_VERSION = "2026-10-30.1";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
 const pad = n => String(n).padStart(2, "0");
@@ -424,59 +424,55 @@ function move(delta) {
   show();
 }
 
-// ---------- sync: ask GitHub Actions to fetch new Telegram messages now ----------
-// GitHub's scheduled runs are often delayed for hours, so opening the app triggers one.
+// ---------- sync: the Cloudflare Worker saves Telegram messages every minute; just re-read ----------
 let syncing = false;
 async function syncNow(manual) {
-  const last = Number(store.get("diary.lastSync") || 0);
-  if (syncing || (!manual && Date.now() - last < 2 * 60e3)) return;
-  syncing = true; store.set("diary.lastSync", String(Date.now()));
-  const info = $("syncInfo");
-  try {
-    const res = await gh("/actions/workflows/diary.yml/dispatches", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: "main" }),
-    });
-    if (!res.ok) { info.textContent = "텔레그램 동기화 실행 권한이 없어요 (토큰 Actions 권한 확인)"; return; }
-    const key = monthKey(), before = JSON.stringify(cache.entries[key] || []);
-    const started = Date.now();
-    while (Date.now() - started < 120e3) {
-      info.textContent = "텔레그램 새 글 가져오는 중…";
-      await new Promise(r => setTimeout(r, 10e3));
-      await loadMonth(key, true);
-      if (JSON.stringify(cache.entries[key]) !== before) { render(); break; }   // keeps an open editor
-    }
-    info.textContent = `동기화 ${new Date().toTimeString().slice(0, 5)}`;
-  } catch (e) { info.textContent = e.message; }
-  finally { syncing = false; }
+  if (syncing || !manual) return;
+  syncing = true;
+  try { await show(true); toast("새로 불러왔어요"); } finally { syncing = false; }
 }
 
-// ---------- AI analysis via GitHub Actions ----------
+// ---------- AI analysis: ask the diary's Cloudflare Worker (address saved in diary/config.json) ----------
+let workerUrl = null;
+async function getWorkerUrl() {
+  if (workerUrl) return workerUrl;
+  const cfgText = await readFile("diary/config.json");
+  workerUrl = cfgText ? JSON.parse(cfgText).worker_url : null;
+  return workerUrl;
+}
+async function workerApi(path) {
+  const base = await getWorkerUrl();
+  if (!base) throw new Error("일기 서버(Cloudflare Worker) 주소를 몰라요. Worker 주소를 브라우저로 한 번 열어 주세요.");
+  const res = await fetch(base + path, { method: "POST", headers: { Authorization: `Bearer ${cfg.token}` } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.ok) throw new Error(body.error || `일기 서버 오류 (${res.status})`);
+  return body;
+}
+
 let analyzing = false;
 async function analyze() {
-  const key = monthKey(), before = cache.analysis[key];
+  const key = monthKey();
   $("analysisError").textContent = "";
   analyzing = true; render();
-  const status = $("analyzeStatus");
+  const status = $("analyzeStatus"), started = Date.now();
+  const timer = setInterval(() => {
+    status.textContent = `Gemini 가 분석하는 중… ${Math.round((Date.now() - started) / 1000)}초 (보통 20~40초)`;
+  }, 1000);
   try {
-    const res = await gh("/actions/workflows/diary-monthly.yml/dispatches", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: "main", inputs: { month: key } }),
-    });
-    if (res.status === 403 || res.status === 404)
-      throw new Error("분석 실행 권한이 없어요. 토큰에 Actions: Read and write 권한을 추가해 주세요.");
-    if (!res.ok) throw new Error(`분석 실행 실패 (${res.status})`);
-    const started = Date.now();
-    while (Date.now() - started < 5 * 60e3) {
-      status.textContent = `Gemini 가 분석하는 중… ${Math.round((Date.now() - started) / 1000)}초 (보통 1분 안팎)`;
-      await new Promise(r => setTimeout(r, 10e3));
-      const a = await readFile(`diary/analysis/${key}.md`);
-      if (a && a !== before) { cache.analysis[key] = a; status.textContent = "완료! 텔레그램으로도 보냈어요."; return; }
-    }
-    throw new Error("시간이 오래 걸리고 있어요. 잠시 뒤 새로고침하거나 GitHub Actions 탭을 확인해 주세요.");
+    const { text } = await workerApi(`/api/analyze?month=${key}`);
+    cache.analysis[key] = text.trim() + "\n";
+    status.textContent = "완료! 텔레그램으로도 보냈어요.";
   } catch (e) {
     $("analysisError").textContent = e.message; status.textContent = "";
-  } finally { analyzing = false; render(); }
+  } finally { clearInterval(timer); analyzing = false; render(); }
+}
+
+// App opened: let the Worker finish leftover jobs (voice transcriptions that failed, last month's analysis).
+let openPinged = false;
+function pingWorker() {
+  if (openPinged) return;
+  openPinged = true;
+  workerApi("/api/open").catch(() => { openPinged = false; });
 }
 
 // ---------- self-update: GitHub Pages / WebView caches can serve an old page for a while ----------
@@ -508,6 +504,7 @@ async function connect() {
 
 function start() {
   checkForUpdate();
+  pingWorker();
   $("setup").hidden = true; $("app").hidden = false;
   show().then(() => syncNow(false));
 }

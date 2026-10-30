@@ -14,7 +14,9 @@
 
 폰에서 받기: https://github.com/happyfamily1984/diary-app/releases/download/apk/diary.apk
 
-## ⚡ 즉시 동기화 (Cloudflare Worker)
+## ⚡ 일기 처리 서버 (Cloudflare Worker)
 
-`cloudflare/worker.js` 는 1분마다 텔레그램에 새 메시지가 있는지 확인하고, 있으면 일기 저장소의
-GitHub Actions 를 바로 실행시키는 Cloudflare Worker 입니다. 토큰은 코드가 아니라 Worker 의 Secrets 에 넣습니다.
+`cloudflare/worker.js` 가 일기장의 모든 처리를 합니다 — GitHub Actions 도, Cron 도 쓰지 않습니다.
+텔레그램이 새 메시지마다 Worker 를 부르면(웹훅) 글/음성을 일기 저장소에 저장하고 명령에 답합니다.
+앱의 "AI 분석하기"도 이 Worker 에 직접 요청합니다. 설정 후 Worker 주소를 브라우저로 한 번 열면 웹훅이 연결됩니다.
+토큰들은 코드가 아니라 Worker 의 Secrets 에 넣습니다.
