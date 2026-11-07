@@ -17,6 +17,7 @@
 //
 // 설치 후 Worker 주소를 브라우저로 한 번 열면 텔레그램 웹훅이 연결되고 설정을 점검합니다.
 
+const VERSION = "2026-11-07.2";
 const DEFAULT_APP_URL = "https://happyfamily1984.github.io/diary-app/";
 const MAX_SUBREQUESTS = 40;          // free plan allows 50 per invocation; keep headroom
 const VOICE_PENDING = "🎙 (음성 일기 — 받아쓰기 대기 중)";
@@ -558,6 +559,9 @@ export class DiaryJobs {
   constructor(state, env) { this.state = state; this.env = env; }
 
   async fetch(request) {
+    if (new URL(request.url).pathname === "/status")
+      return Response.json({ alarm: await this.state.storage.getAlarm(), lastRun: (await this.state.storage.get("lastRun")) || null,
+                             queue: (await this.state.storage.get("analysis")) || [] });
     const body = await request.json().catch(() => ({}));
     if (body.analysis) {
       const queue = (await this.state.storage.get("analysis")) || [];
@@ -569,6 +573,13 @@ export class DiaryJobs {
   }
 
   async alarm() {
+    const started = new Date().toISOString();
+    await this.state.storage.put("lastRun", { started, state: "running" });
+    try { await this.run(); await this.state.storage.put("lastRun", { started, finished: new Date().toISOString(), state: "done" }); }
+    catch (e) { await this.state.storage.put("lastRun", { started, state: "error", error: String(e.message || e).slice(0, 300) }); }
+  }
+
+  async run() {
     const ctx = makeCtx(this.env);
     const queue = (await this.state.storage.get("analysis")) || [];
     await this.state.storage.put("analysis", []);
@@ -677,7 +688,15 @@ async function setup(request, env) {
     });
     await telegram(ctx, "setMyCommands", { commands: COMMANDS.map(([command, description]) => ({ command, description })) });
     const info = await telegram(ctx, "getWebhookInfo", {});
-    return { ok: true, webhook: info.url, telegram_pending: info.pending_update_count,
+    let jobs;
+    try {
+      if (!env.JOBS) jobs = "JOBS 연결 없음 (배포 설정 확인 필요)";
+      else {
+        await kickJobs(env);
+        jobs = await (await env.JOBS.get(env.JOBS.idFromName("diary")).fetch("https://jobs/status")).json();
+      }
+    } catch (e) { jobs = `오류: ${e.message}`; }
+    return { ok: true, version: VERSION, jobs, webhook: info.url, telegram_pending: info.pending_update_count,
              last_error: info.last_error_message || null, github: "읽기·쓰기 권한 OK", gemini: "OK",
              note: "텔레그램 메시지가 오면 바로 처리합니다 (GitHub Actions·Cron 사용 안 함)" };
   } catch (e) { return { ok: false, step: "텔레그램", error: e.message, hint: "TELEGRAM_BOT_TOKEN 값을 확인하세요" }; }
