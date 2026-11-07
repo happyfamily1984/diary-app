@@ -17,14 +17,14 @@
 //
 // 설치 후 Worker 주소를 브라우저로 한 번 열면 텔레그램 웹훅이 연결되고 설정을 점검합니다.
 
-const VERSION = "2026-11-07.2";
+const VERSION = "2026-11-07.3";
 const DEFAULT_APP_URL = "https://happyfamily1984.github.io/diary-app/";
 const MAX_SUBREQUESTS = 40;          // free plan allows 50 per invocation; keep headroom
 const VOICE_PENDING = "🎙 (음성 일기 — 받아쓰기 대기 중)";
 const WEEKDAYS = "월화수목금토일";
 const FALLBACK_MODELS = ["gemini-flash-lite-latest"];
 const RETRY_DELAYS = [3000, 8000];
-const TRANSIENT = new Set([429, 500, 503, 504]);
+const TRANSIENT = new Set([429, 500, 502, 503, 504, 524]);   // 524: long audio timed out — retry, then the faster model
 
 const ANALYSIS_PROMPT = `너는 따뜻하고 통찰력 있는 일기 분석가야. 사용자가 한 달 동안 쓴 일기를 읽고 한국어로 분석해 줘.
 
