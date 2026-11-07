@@ -7,3 +7,12 @@ keep_vars = true # 대시보드에서 넣은 변수를 배포할 때 지우지 �
 
 [triggers]
 crons = [] # Cron 을 쓰지 않음 — 텔레그램 웹훅으로 메시지가 올 때만 실행 (계정 공용 Cron 한도를 쓰지 않음)
+
+# 오래 걸리는 일(음성 받아쓰기, 분석)을 처리하는 Durable Object — 무료 플랜의 SQLite 저장소형
+[[durable_objects.bindings]]
+name = "JOBS"
+class_name = "DiaryJobs"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DiaryJobs"]

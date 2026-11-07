@@ -405,16 +405,11 @@ async function handleDiaryMessage(ctx, message, edited) {
   const entry = baseEntry(ctx, message);
   if (voice) {
     if (edited) return null;                       // only the caption changed; keep the transcript
+    if (message.caption) voice.caption = message.caption;
     await upsert(ctx, entry, { text: VOICE_PENDING, voice, pending: true }, "diary: voice entry");
     await react(ctx, message);
-    return async () => {
-      try {
-        let text = await transcribe(ctx, voice);
-        if (message.caption) text += `\n${message.caption}`;
-        await upsert(ctx, entry, { text, pending: undefined }, "diary: transcribe voice entry");
-        await replyTranscript(ctx, message.chat.id, message.message_id, text);
-      } catch (e) { console.warn("transcription failed, will retry:", e.message); }
-    };
+    ctx.kick = true;                                 // transcription runs in the Jobs Durable Object
+    return null;
   }
   const text = messageText(message);
   if (!text) return null;
@@ -425,17 +420,36 @@ async function handleDiaryMessage(ctx, message, edited) {
   return null;
 }
 
-async function retryPendingVoice(ctx) {
-  const month = todayLocal(ctx.tz).slice(0, 7);
-  const cutoff = Date.now() - 3 * 60e3;              // leave fresh ones to their own run
-  for (const e of await loadMonth(ctx, month)) {
-    if (!e.pending || !e.voice || Date.parse(e.time) > cutoff || ctx.budgetLeft() < 12) continue;
-    try {
-      const text = await transcribe(ctx, e.voice);
-      await upsert(ctx, e, { text, pending: undefined }, "diary: transcribe voice entry");
-      if (ctx.chatId) await replyTranscript(ctx, ctx.chatId, e.id, text);
-    } catch (err) { console.warn("retry transcription failed:", err.message); }
+const MAX_VOICE_ATTEMPTS = 5;
+
+// Transcribes every waiting voice entry. Returns true if some are left for another round.
+async function transcribePending(ctx) {
+  const now = todayLocal(ctx.tz);
+  const months = [...new Set([now.slice(0, 7), previousMonth(ctx.tz)])];
+  let left = false;
+  for (const month of months) {
+    for (const e of await loadMonth(ctx, month)) {
+      if (!e.pending || !e.voice || (e.attempts || 0) >= MAX_VOICE_ATTEMPTS) continue;
+      if (ctx.budgetLeft() < 14) { left = true; continue; }
+      try {
+        let text = await transcribe(ctx, e.voice);
+        if (e.voice.caption) text += `\n${e.voice.caption}`;
+        await upsert(ctx, e, { text, pending: undefined, attempts: undefined, pending_error: undefined },
+                     "diary: transcribe voice entry");
+        if (ctx.chatId) await replyTranscript(ctx, ctx.chatId, e.id, text);
+      } catch (err) {
+        const attempts = (e.attempts || 0) + 1;
+        console.warn("transcription failed:", e.id, attempts, err.message);
+        await upsert(ctx, e, { attempts, pending_error: String(err.message).slice(0, 300) },
+                     "diary: voice transcription failed").catch(() => {});
+        if (attempts >= MAX_VOICE_ATTEMPTS && ctx.chatId)
+          await send(ctx, ctx.chatId, `⚠️ 음성 일기(${e.time.slice(5, 16).replace("T", " ")}) 받아쓰기가 계속 실패했어요. ` +
+                     `다시 보내 주시거나 앱에서 직접 적어 주세요.\n<code>${escapeHtml(String(err.message).slice(0, 150))}</code>`).catch(() => {});
+        else left = true;
+      }
+    }
   }
+  return left;
 }
 
 // ---------------------------------------------------------------- commands
@@ -489,11 +503,9 @@ async function handleCommand(ctx, chatId, command, arg) {
                                     : `${month} 분석이 아직 없어요. /analyze ${month} 로 만들 수 있어요.`);
       return null;
     }
-    await send(ctx, chatId, `🧠 ${month} 일기를 분석하는 중…`);
-    return async () => {
-      try { await send(ctx, chatId, analysisMessage(month, await analyzeMonth(ctx, month))); }
-      catch (e) { await send(ctx, chatId, `⚠️ ${escapeHtml(e.message)}`).catch(() => {}); }
-    };
+    await send(ctx, chatId, `🧠 ${month} 일기를 분석하는 중… (1분 안팎)`);
+    ctx.kick = { analysis: { month, chatId } };
+    return null;
   }
   await send(ctx, chatId, "알 수 없는 명령입니다. /help 를 입력해 보세요.");
   return null;
@@ -533,9 +545,43 @@ async function ensureMonthlyAnalysis(ctx) {
   }
 }
 
-async function chores(ctx) {
-  if (ctx.budgetLeft() > 15) await retryPendingVoice(ctx);
-  await ensureMonthlyAnalysis(ctx);
+// ---------------------------------------------------------------- Jobs Durable Object
+// Slow work (voice transcription, analyses) runs in a Durable Object alarm: unlike work after a
+// response (waitUntil, cut off after 30 s on the free plan), an alarm may run for minutes.
+
+async function kickJobs(env, payload = {}) {
+  const stub = env.JOBS.get(env.JOBS.idFromName("diary"));
+  await stub.fetch("https://jobs/kick", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export class DiaryJobs {
+  constructor(state, env) { this.state = state; this.env = env; }
+
+  async fetch(request) {
+    const body = await request.json().catch(() => ({}));
+    if (body.analysis) {
+      const queue = (await this.state.storage.get("analysis")) || [];
+      if (!queue.some(q => q.month === body.analysis.month)) queue.push(body.analysis);
+      await this.state.storage.put("analysis", queue);
+    }
+    if (!(await this.state.storage.getAlarm())) await this.state.storage.setAlarm(Date.now() + 200);
+    return new Response("ok");
+  }
+
+  async alarm() {
+    const ctx = makeCtx(this.env);
+    const queue = (await this.state.storage.get("analysis")) || [];
+    await this.state.storage.put("analysis", []);
+    for (const { month, chatId } of queue) {
+      try { await send(ctx, chatId, analysisMessage(month, await analyzeMonth(ctx, month))); }
+      catch (e) { await send(ctx, chatId, `⚠️ ${escapeHtml(e.message)}`).catch(() => {}); }
+    }
+    let more = false;
+    try { more = await transcribePending(ctx); } catch (e) { console.error("transcription round failed:", e.message); more = true; }
+    try { await ensureMonthlyAnalysis(ctx); } catch (e) { console.error("monthly analysis failed:", e.message); }
+    // Another round for what didn't fit in this one (50 outbound calls per run); failures back off.
+    if (more) await this.state.storage.setAlarm(Date.now() + (ctx.budgetLeft() < 14 ? 2000 : 60_000));
+  }
 }
 
 // ---------------------------------------------------------------- Telegram webhook
@@ -556,11 +602,10 @@ async function onTelegram(request, env, waitUntil) {
     console.error("update failed, Telegram will resend:", update.update_id, e.message);
     return new Response("retry", { status: 500 });
   }
-  // Answer Telegram now; slow work (transcription, analysis, chores) continues in the background.
-  waitUntil((async () => {
-    if (later) await later();
-    await chores(ctx);
-  })().catch(e => console.error("background work failed:", e.message)));
+  if (later) waitUntil(later().catch(e => console.error("background work failed:", e.message)));
+  // Slow work goes to the Jobs Durable Object; every message also nudges it to catch up on leftovers.
+  try { await kickJobs(env, ctx.kick && ctx.kick.analysis ? { analysis: ctx.kick.analysis } : {}); }
+  catch (e) { console.error("could not start jobs:", e.message); }
   return new Response("ok");
 }
 
@@ -593,8 +638,8 @@ async function onApi(request, env, waitUntil) {
       if (ctx.chatId) waitUntil(send(ctx, ctx.chatId, analysisMessage(month, text)).catch(() => {}));
       return json({ ok: true, month, text });
     }
-    if (url.pathname === "/api/open") {               // app opened: do pending chores in the background
-      waitUntil(chores(ctx).catch(e => console.error("chores failed:", e.message)));
+    if (url.pathname === "/api/open") {               // app opened: let the Jobs object catch up
+      await kickJobs(env);
       return json({ ok: true });
     }
     return json({ ok: false, error: "unknown endpoint" }, 404);
