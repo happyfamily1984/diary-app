@@ -2,7 +2,6 @@ package io.github.happyfamily1984.diary;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -69,14 +68,11 @@ public class MainActivity extends Activity {
 
     private void applySystemBars() {
         Window w = getWindow();
-        boolean night = (getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         w.setStatusBarColor(getColor(R.color.background));
         w.setNavigationBarColor(getColor(R.color.background));
-        if (!night) {
-            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                    | (Build.VERSION.SDK_INT >= 26 ? View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0));
-        }
+        // The app is always light (sky theme), so use dark status/navigation icons in both modes.
+        w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                | (Build.VERSION.SDK_INT >= 26 ? View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0));
         // Android 15 draws edge-to-edge: keep the page clear of the status/navigation bars and keyboard.
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
@@ -93,7 +89,7 @@ public class MainActivity extends Activity {
 
     private String offlinePage() {
         return "<html><body style='font-family:sans-serif;text-align:center;padding-top:40vh;"
-                + "background:#faf8f5;color:#2b2a28'>인터넷에 연결되지 않았어요.<br><br>"
+                + "background:#c9dbff;color:#26283d'>인터넷에 연결되지 않았어요.<br><br>"
                 + "<button style='font-size:16px;padding:8px 16px' onclick=\"location.href='"
                 + appUrl + "'\">다시 시도</button></body></html>";
     }
