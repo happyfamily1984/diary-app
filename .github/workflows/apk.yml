@@ -24,8 +24,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
+      - name: Signing key (optional secret APK_KEYSTORE_B64)
+        env:
+          KS: ${{ secrets.APK_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/diary.keystore"
+            echo "APK_KEYSTORE_FILE=$RUNNER_TEMP/diary.keystore" >> "$GITHUB_ENV"
+          else
+            echo "no fixed signing key: using the debug key"
+          fi
       - name: Build
         working-directory: android
+        env:
+          APK_KEYSTORE_PASSWORD: ${{ secrets.APK_KEYSTORE_PASSWORD }}
         run: gradle --no-daemon assembleRelease
       - name: Publish release
         env:
@@ -34,4 +46,4 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk diary.apk
           gh release delete apk --yes --cleanup-tag || true
           gh release create apk diary.apk --title "일기장 앱 (APK)" \
-            --notes "폰에서 diary.apk 를 받아 설치하세요. 화면과 기능은 웹에서 불러오므로 웹이 바뀌어도 다시 설치할 필요가 없습니다."
+            --notes "폰에서 diary.apk 를 받아 설치하세요. 화면과 기능은 웹에서 불러오므로 웹이 바뀌어도 다시 설치할 필요가 없습니다. (마이크 권한: 말로 기록하기)"

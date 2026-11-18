@@ -1,7 +1,10 @@
 package io.github.happyfamily1984.diary;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -9,6 +12,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -22,6 +26,8 @@ public class MainActivity extends Activity {
     private WebView webView;
     private FrameLayout root;
     private String appUrl;
+    private PermissionRequest pendingMic;           // a page request waiting for the Android mic permission
+    private static final int REQ_MIC = 7;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,7 +41,25 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true); // the page keeps the GitHub token in localStorage
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
-        webView.setWebChromeClient(new WebChromeClient()); // confirm() dialogs
+        webView.setWebChromeClient(new WebChromeClient() {   // also shows the page's confirm() dialogs
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                // The page asks for the microphone to record a voice entry.
+                boolean wantsMic = false;
+                for (String r : request.getResources())
+                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) wantsMic = true;
+                if (!wantsMic || !request.getOrigin().toString().startsWith(appUrl.substring(0, appUrl.indexOf('/', 8)))) {
+                    request.deny();
+                    return;
+                }
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    request.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
+                } else {
+                    pendingMic = request;
+                    requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, REQ_MIC);
+                }
+            }
+        });
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -95,9 +119,23 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        if (code != REQ_MIC || pendingMic == null) return;
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED)
+            pendingMic.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
+        else pendingMic.deny();
+        pendingMic = null;
+    }
+
+    // Back goes to the previous screen of the page (sheet → day → home); on the first screen, ask before quitting.
+    @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        if (webView.canGoBack()) { webView.goBack(); return; }
+        new AlertDialog.Builder(this)
+                .setMessage("앱을 종료하겠습니까?")
+                .setPositiveButton("예", (d, w) -> finish())
+                .setNegativeButton("아니오", null)
+                .show();
     }
 
     @Override

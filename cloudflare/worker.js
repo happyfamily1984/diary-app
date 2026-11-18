@@ -1,79 +1,67 @@
-// 일기장 Worker (Cloudflare Workers 무료 플랜) — GitHub Actions 도, Cron 도 쓰지 않습니다.
+// 일기장 서버 (Cloudflare Workers 무료 플랜) — 앱 전용, GitHub Actions·Cron·텔레그램 없이 동작합니다.
 //
-// 텔레그램이 일기방에 새 메시지가 올 때마다 이 Worker 를 부릅니다(웹훅). 그때
-//   - 글은 그대로, 음성은 Gemini 로 받아써서 일기 저장소(diary/entries/YYYY-MM.json)에 저장하고
-//   - /cal /day /analyze /analysis 같은 명령에 답합니다.
-// 앱은 "AI 분석하기"와 앱을 열 때의 점검(/api/...)을 이 Worker 에 직접 요청합니다.
-// 지난달 분석은 매달 1일 이후 처음 들어오는 메시지나 앱 열기 때 자동으로 만듭니다.
-// → 계정 공용 한도(Cron 5개, 하루 요청 10만 회)를 거의 쓰지 않습니다: 메시지 1개 = 요청 1회.
+// 앱이 이 Worker 에 직접 요청합니다 (/api/...):
+//   - 녹음을 보내면(POST /api/voice) 녹음 파일을 Worker 의 저장 공간(Durable Object)에 잠시 보관하고,
+//     Gemini 로 받아써서 일기 저장소(diary/entries/YYYY-MM.json)에 글로 남긴 뒤 녹음은 지웁니다.
+//   - "AI 분석하기"(POST /api/analyze)는 그 달의 일기와 아이디어를 함께 분석합니다.
+//   - 앱을 열 때(POST /api/open) 밀린 받아쓰기와 지난달 분석을 처리합니다.
+// 요청은 앱에 넣은 GitHub 토큰으로 확인합니다 (일기 저장소를 읽을 수 있어야 함).
 //
 // 필요한 Secrets (Settings → Variables and Secrets, Type: Secret):
-//   TELEGRAM_BOT_TOKEN  일기 봇 토큰
-//   DIARY_CHAT_ID       일기방 chat ID
-//   GEMINI_API_KEY      Gemini API 키
-//   GITHUB_TOKEN        daily 저장소만 선택한 Fine-grained 토큰 (Contents: Read and write)
-//   GITHUB_REPO         happyfamily1984/daily
-// 선택: GEMINI_MODEL, DIARY_TIMEZONE (기본 Asia/Seoul), APP_URL
-//
-// 설치 후 Worker 주소를 브라우저로 한 번 열면 텔레그램 웹훅이 연결되고 설정을 점검합니다.
+//   GEMINI_API_KEY   Gemini API 키
+//   GITHUB_TOKEN     daily 저장소만 선택한 Fine-grained 토큰 (Contents: Read and write)
+//   GITHUB_REPO      happyfamily1984/daily
+// 선택: GEMINI_MODEL, DIARY_TIMEZONE (기본 Asia/Seoul)
+// 예전 텔레그램 연동이 남아 있으면 Worker 주소를 열 때 끊습니다 (TELEGRAM_BOT_TOKEN 이 있을 때).
 
-const VERSION = "2026-11-07.3";
-const DEFAULT_APP_URL = "https://happyfamily1984.github.io/diary-app/";
+const VERSION = "2026-11-18.1";
 const MAX_SUBREQUESTS = 40;          // free plan allows 50 per invocation; keep headroom
-const VOICE_PENDING = "🎙 (음성 일기 — 받아쓰기 대기 중)";
-const WEEKDAYS = "월화수목금토일";
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+const AUDIO_PART = 1024 * 1024;      // Durable Object storage values are limited to 2 MB
+const VOICE_PENDING = "🎙 (받아쓰는 중…)";
+const MAX_VOICE_ATTEMPTS = 5;
+const KINDS = { idea: "아이디어", diary: "일기" };
 const FALLBACK_MODELS = ["gemini-flash-lite-latest"];
 const RETRY_DELAYS = [3000, 8000];
 const TRANSIENT = new Set([429, 500, 502, 503, 504, 524]);   // 524: long audio timed out — retry, then the faster model
 
-const ANALYSIS_PROMPT = `너는 따뜻하고 통찰력 있는 일기 분석가야. 사용자가 한 달 동안 쓴 일기를 읽고 한국어로 분석해 줘.
+const ANALYSIS_PROMPT = `너는 따뜻하고 통찰력 있는 기록 분석가야. 사용자가 한 달 동안 남긴 일기와 아이디어 메모를 읽고 한국어로 분석해 줘.
+각 기록 앞에는 (일기) 또는 (아이디어) 표시가 있어.
 
 아래 순서로, 각 항목은 이모지 제목 한 줄 + 짧은 문단이나 '- ' 목록으로 써.
 📌 한 달 요약 (3~4문장)
 🗓 주요 사건과 상황 (날짜와 함께)
 💭 감정·심리 흐름 (주차별 변화, 감정이 크게 바뀐 날과 그 계기)
+💡 아이디어 정리 (비슷한 것끼리 묶고, 일기 속 상황과 어떻게 이어지는지, 해 볼 만한 것 1~2개)
 🔁 반복되는 패턴 (스트레스 요인, 에너지를 주는 것, 생각의 습관)
 🌱 잘하고 있는 점
 💡 다음 달을 위한 제안 (구체적이고 작은 행동 2~3개)
+아이디어가 없으면 '💡 아이디어 정리'는 빼.
 
 규칙:
-- 일기에 근거해서만 말하고, 추측은 추측이라고 밝혀.
+- 기록에 근거해서만 말하고, 추측은 추측이라고 밝혀.
 - 판단하거나 훈계하지 말고 친구처럼 다정하게.
 - 의학적 진단은 하지 마. 자해·자살 생각이나 심한 우울 신호가 보이면 부드럽게 전문가 도움을 권하고 자살예방상담전화 109(24시간)를 알려 줘.
-- 마크다운 문법(**, #, 표)은 쓰지 마. 전체 길이는 2,500자 이내.`;
+- 마크다운 문법(**, #, 표)은 쓰지 마. 전체 길이는 3,000자 이내.`;
 
-const TRANSCRIBE_PROMPT = `이 음성은 사용자가 말로 남긴 일기야. 들리는 그대로 한국어 문장으로 받아써 줘.
+const TRANSCRIBE_PROMPT = `이 음성은 사용자가 말로 남긴 일기나 아이디어 메모야. 들리는 그대로 한국어 문장으로 받아써 줘.
 - '음', '어' 같은 군말과 반복은 빼고, 문장 부호를 넣어 읽기 좋게 다듬어.
 - 내용을 요약하거나 바꾸거나 덧붙이지 마.
 - 받아쓴 글만 출력해. 말소리가 없으면 '(내용 없음)' 이라고만 써.`;
-
-const COMMANDS = [
-  ["cal", "일기 달력 (예: /cal 2026-10)"],
-  ["day", "그날 일기 보기 (예: /day 2026-10-08)"],
-  ["analyze", "AI 월간 상황·심리 분석 (예: /analyze 2026-10)"],
-  ["analysis", "저장된 월간 분석 다시 보기"],
-  ["app", "달력 일기장 앱 열기"],
-  ["help", "도움말"],
-  ["id", "이 방의 chat ID"],
-];
 
 class UserError extends Error {}
 
 // ---------------------------------------------------------------- context
 
-function makeCtx(env, waitUntil = p => p) {
+function makeCtx(env) {
   let used = 0;
-  const ctx = {
+  return {
     env,
-    waitUntil,
     tz: env.DIARY_TIMEZONE || "Asia/Seoul",
-    chatId: env.DIARY_CHAT_ID ? Number(env.DIARY_CHAT_ID) : null,
-    appUrl: env.APP_URL || DEFAULT_APP_URL,
     budgetLeft: () => MAX_SUBREQUESTS - used,
     fetch: (url, init) => { used++; return fetch(url, init); },
     dictionary: null,
   };
-  return ctx;
 }
 
 // ---------------------------------------------------------------- time (in the diary's time zone)
@@ -94,28 +82,12 @@ function isoLocal(date, tz) {
   return `${p.y}-${pad(p.m)}-${pad(p.d)}T${pad(p.hh)}:${pad(p.mm)}${off >= 0 ? "+" : "-"}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
 }
 const todayLocal = tz => { const p = localParts(new Date(), tz); return `${p.y}-${pad(p.m)}-${pad(p.d)}`; };
-const weekdayOf = iso => WEEKDAYS[(new Date(`${iso}T12:00:00Z`).getUTCDay() + 6) % 7];
 
 function parseMonth(arg, tz) {
   if (!arg) return todayLocal(tz).slice(0, 7);
   const m = arg.match(/^(\d{4})[-./]?(\d{1,2})$/);
   if (!m || +m[2] < 1 || +m[2] > 12) throw new UserError("월은 2026-10 형식으로 적어 주세요");
   return `${m[1]}-${pad(+m[2])}`;
-}
-
-function parseDay(arg, tz) {
-  const today = todayLocal(tz);
-  if (!arg) return today;
-  if (arg === "어제" || arg === "yesterday") {
-    const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - 1);
-    return d.toISOString().slice(0, 10);
-  }
-  const m = arg.match(/^(?:(\d{4})[-./])?(\d{1,2})[-./](\d{1,2})$/);
-  if (!m) throw new UserError("날짜는 2026-10-08 또는 10-08 형식으로 적어 주세요");
-  const iso = `${m[1] || today.slice(0, 4)}-${pad(+m[2])}-${pad(+m[3])}`;
-  const d = new Date(`${iso}T12:00:00Z`);
-  if (isNaN(d) || d.toISOString().slice(0, 10) !== iso) throw new UserError(`없는 날짜예요: ${arg}`);
-  return iso;
 }
 
 function previousMonth(tz) {
@@ -286,7 +258,7 @@ async function uploadToGemini(ctx, bytes, mime) {
   });
   if (!up.ok) throw new Error(`Gemini upload ${up.status}`);
   let file = (await up.json()).file;
-  for (let i = 0; file.state === "PROCESSING" && i < 5; i++) {       // video notes need a moment
+  for (let i = 0; file.state === "PROCESSING" && i < 5; i++) {       // some formats need a moment
     await new Promise(r => setTimeout(r, 2000));
     file = await (await ctx.fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}`,
                                   { headers: { "x-goog-api-key": key } })).json();
@@ -294,28 +266,29 @@ async function uploadToGemini(ctx, bytes, mime) {
   return file;
 }
 
-async function transcribe(ctx, voice) {
-  const info = await telegram(ctx, "getFile", { file_id: voice.file_id });
-  const audio = await ctx.fetch(`https://api.telegram.org/file/bot${ctx.env.TELEGRAM_BOT_TOKEN}/${info.file_path}`);
-  if (!audio.ok) throw new Error(`telegram file ${audio.status}`);
-  const file = await uploadToGemini(ctx, await audio.arrayBuffer(), voice.mime);
+async function transcribe(ctx, bytes, mime) {
+  const file = await uploadToGemini(ctx, bytes, mime);
   const words = await dictionary(ctx);
   const text = await generate(ctx, TRANSCRIBE_PROMPT + dictionaryHint(words),
-    [{ file_data: { mime_type: file.mimeType || voice.mime, file_uri: file.uri } }, { text: "받아써 줘." }], 0);
+    [{ file_data: { mime_type: file.mimeType || mime, file_uri: file.uri } }, { text: "받아써 줘." }], 0);
   ctx.fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}`,
             { method: "DELETE", headers: { "x-goog-api-key": ctx.env.GEMINI_API_KEY } }).catch(() => {});
   return `🎙 ${fixWords(text, words)}`;
 }
 
+const kindOf = e => (e.kind === "idea" ? "idea" : "diary");
+
 async function analyzeMonth(ctx, month) {
-  const entries = await loadMonth(ctx, month);
-  if (!entries.length) throw new UserError(`${month} 에 기록된 일기가 없어요.`);
+  const entries = (await loadMonth(ctx, month)).filter(e => !e.pending);
+  if (!entries.length) throw new UserError(`${month} 에 남긴 기록이 없어요.`);
   const words = await dictionary(ctx);
   const people = words.filter(w => w.note).map(w => `${w.correct}: ${w.note}`);
-  const lines = [`다음은 ${month} 한 달 동안의 일기 ${entries.length}개야.`];
-  if (people.length) lines.push("일기에 나오는 사람·단어: " + people.join(", "));
+  const ideas = entries.filter(e => kindOf(e) === "idea").length;
+  const lines = [`다음은 ${month} 한 달 동안의 기록 ${entries.length}개야 (일기 ${entries.length - ideas}개, 아이디어 ${ideas}개).`];
+  if (people.length) lines.push("기록에 나오는 사람·단어: " + people.join(", "));
   lines.push("");
-  for (const e of entries) lines.push(`[${e.time.slice(0, 16).replace("T", " ")}]${e.from ? ` (${e.from})` : ""} ${e.text}`);
+  for (const e of entries)
+    lines.push(`[${e.time.slice(0, 16).replace("T", " ")}] (${KINDS[kindOf(e)]})${e.from ? ` (${e.from})` : ""} ${e.text}`);
   const text = await generate(ctx, ANALYSIS_PROMPT, [{ text: lines.join("\n") }], 0.7);
   const path = `diary/analysis/${month}.md`;
   const { sha } = await readWithSha(ctx, path);
@@ -324,63 +297,7 @@ async function analyzeMonth(ctx, month) {
   return text;
 }
 
-const analysisMessage = (month, text) => `<b>🧠 ${month} 상황·심리 분석</b>\n\n${escapeHtml(text)}`;
-
-// ---------------------------------------------------------------- Telegram
-
-async function telegram(ctx, method, params) {
-  const res = await ctx.fetch(`https://api.telegram.org/bot${ctx.env.TELEGRAM_BOT_TOKEN}/${method}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params),
-  });
-  const body = await res.json();
-  if (!body.ok) throw new Error(`telegram ${method}: ${body.description}`);
-  return body.result;
-}
-
-const escapeHtml = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-async function send(ctx, chatId, text, extra = {}) {
-  const chunks = [];
-  let buf = "";
-  for (const line of text.split("\n")) {
-    if (buf && buf.length + line.length + 1 > 4000) { chunks.push(buf); buf = ""; }
-    buf += (buf ? "\n" : "") + line;
-  }
-  if (buf) chunks.push(buf);
-  for (const chunk of chunks)
-    await telegram(ctx, "sendMessage", { chat_id: chatId, text: chunk, parse_mode: "HTML",
-                                         disable_web_page_preview: true, ...extra });
-}
-
-
-// ---------------------------------------------------------------- diary entries
-
-function messageText(message) {
-  const text = message.text || message.caption;
-  const media = [["photo", "사진"], ["video", "영상"], ["document", "파일"], ["sticker", "스티커"], ["location", "위치"]];
-  for (const [key, label] of media) {
-    if (message[key]) {
-      const extra = key === "sticker" && message.sticker.emoji ? ` ${message.sticker.emoji}` : "";
-      return text ? `[${label}${extra}] ${text}` : `[${label}${extra}]`;
-    }
-  }
-  return text || null;
-}
-
-function voiceOf(message) {
-  if (message.voice) return { file_id: message.voice.file_id, mime: message.voice.mime_type || "audio/ogg" };
-  if (message.audio) return { file_id: message.audio.file_id, mime: message.audio.mime_type || "audio/mpeg" };
-  if (message.video_note) return { file_id: message.video_note.file_id, mime: "video/mp4" };
-  return null;
-}
-
-function baseEntry(ctx, message) {
-  const time = isoLocal(new Date(message.date * 1000), ctx.tz);
-  const entry = { id: message.message_id, time };
-  const from = message.from || {};
-  if (message.chat.type !== "private" && from.first_name) entry.from = from.first_name;
-  return entry;
-}
+// ---------------------------------------------------------------- entries
 
 async function upsert(ctx, entry, fields, message) {
   return updateMonth(ctx, entry.time.slice(0, 7), list => {
@@ -390,185 +307,92 @@ async function upsert(ctx, entry, fields, message) {
   }, message);
 }
 
-async function react(ctx, message) {
-  await telegram(ctx, "setMessageReaction", { chat_id: message.chat.id, message_id: message.message_id,
-                                              reaction: [{ type: "emoji", emoji: "✍" }] }).catch(() => {});
-}
-
-async function replyTranscript(ctx, chatId, messageId, text) {
-  await send(ctx, chatId, `<b>받아쓴 일기</b>\n${escapeHtml(text)}`,
-             { reply_parameters: { message_id: messageId, allow_sending_without_reply: true } }).catch(() => {});
-}
-
-// Returns a function to run after the update is acknowledged (slow work), or null.
-async function handleDiaryMessage(ctx, message, edited) {
-  const voice = voiceOf(message);
-  const entry = baseEntry(ctx, message);
-  if (voice) {
-    if (edited) return null;                       // only the caption changed; keep the transcript
-    if (message.caption) voice.caption = message.caption;
-    await upsert(ctx, entry, { text: VOICE_PENDING, voice, pending: true }, "diary: voice entry");
-    await react(ctx, message);
-    ctx.kick = true;                                 // transcription runs in the Jobs Durable Object
-    return null;
-  }
-  const text = messageText(message);
-  if (!text) return null;
-  const fields = { text };
-  if (edited && message.edit_date) fields.edited = isoLocal(new Date(message.edit_date * 1000), ctx.tz);
-  await upsert(ctx, entry, fields, edited ? "diary: edit entry" : "diary: update entries");
-  if (!edited) await react(ctx, message);
-  return null;
-}
-
-const MAX_VOICE_ATTEMPTS = 5;
-
-// Transcribes every waiting voice entry. Returns true if some are left for another round.
-async function transcribePending(ctx) {
-  const now = todayLocal(ctx.tz);
-  const months = [...new Set([now.slice(0, 7), previousMonth(ctx.tz)])];
+// Transcribes every waiting voice entry whose recording is kept here. Returns true if some are left.
+async function transcribePending(ctx, audio) {
+  const months = [...new Set([todayLocal(ctx.tz).slice(0, 7), previousMonth(ctx.tz)])];
   let left = false;
   for (const month of months) {
     for (const e of await loadMonth(ctx, month)) {
       if (!e.pending || !e.voice || (e.attempts || 0) >= MAX_VOICE_ATTEMPTS) continue;
-      if (ctx.budgetLeft() < 14) { left = true; continue; }
+      if (ctx.budgetLeft() < 12) { left = true; continue; }
+      const rec = await audio.get(e.id);
+      if (!rec) {
+        await upsert(ctx, e, { attempts: MAX_VOICE_ATTEMPTS, pending_error: "녹음 파일을 찾을 수 없어요" },
+                     "diary: voice recording missing").catch(() => {});
+        continue;
+      }
       try {
-        let text = await transcribe(ctx, e.voice);
+        let text = await transcribe(ctx, rec.bytes, rec.mime);
         if (e.voice.caption) text += `\n${e.voice.caption}`;
         await upsert(ctx, e, { text, pending: undefined, attempts: undefined, pending_error: undefined },
                      "diary: transcribe voice entry");
-        if (ctx.chatId) await replyTranscript(ctx, ctx.chatId, e.id, text);
+        await audio.del(e.id);                      // the recording was only kept until it became text
       } catch (err) {
         const attempts = (e.attempts || 0) + 1;
         console.warn("transcription failed:", e.id, attempts, err.message);
         await upsert(ctx, e, { attempts, pending_error: String(err.message).slice(0, 300) },
                      "diary: voice transcription failed").catch(() => {});
-        if (attempts >= MAX_VOICE_ATTEMPTS && ctx.chatId)
-          await send(ctx, ctx.chatId, `⚠️ 음성 일기(${e.time.slice(5, 16).replace("T", " ")}) 받아쓰기가 계속 실패했어요. ` +
-                     `다시 보내 주시거나 앱에서 직접 적어 주세요.\n<code>${escapeHtml(String(err.message).slice(0, 150))}</code>`).catch(() => {});
-        else left = true;
+        if (attempts < MAX_VOICE_ATTEMPTS) left = true;
       }
     }
   }
   return left;
 }
 
-// ---------------------------------------------------------------- commands
-
-function helpText(ctx) {
-  return ["<b>📔 일기장 봇</b>", "", "이 방에 글을 쓰거나 🎙 음성 메시지를 보내면 시간과 함께 일기로 저장돼요.", "",
-          ...COMMANDS.map(([c, d]) => `/${c} — ${escapeHtml(d)}`), "", `📱 앱: ${ctx.appUrl}`].join("\n");
-}
-
-async function monthCalendar(ctx, month) {
-  const [y, m] = month.split("-").map(Number);
-  const entries = await loadMonth(ctx, month);
-  const counts = {};
-  for (const e of entries) counts[+e.time.slice(8, 10)] = (counts[+e.time.slice(8, 10)] || 0) + 1;
-  const rows = [[...WEEKDAYS].map(w => ` ${w}`).join(" ")];
-  const first = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
-  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  let cells = Array(first).fill("   ");
-  for (let d = 1; d <= days; d++) {
-    cells.push(`${String(d).padStart(2)}${counts[d] ? "•" : " "}`);
-    if (cells.length === 7) { rows.push(cells.join(" ").trimEnd()); cells = []; }
-  }
-  if (cells.length) rows.push(cells.join(" ").trimEnd());
-  const lines = [`<b>📅 ${y}년 ${m}월</b>`, `<pre>${rows.join("\n")}</pre>`];
-  if (entries.length) lines.push(`기록한 날 ${Object.keys(counts).length}일 · 일기 ${entries.length}개`,
-                                 "/day YYYY-MM-DD 로 그날 일기 보기");
-  else lines.push("이 달에는 기록이 없어요.");
-  return lines.join("\n");
-}
-
-async function dayView(ctx, day) {
-  const list = (await loadMonth(ctx, day.slice(0, 7))).filter(e => e.time.startsWith(day));
-  const [, m, d] = day.split("-").map(Number);
-  const title = `<b>📖 ${day.slice(0, 4)}년 ${m}월 ${d}일 (${weekdayOf(day)})</b>`;
-  if (!list.length) return `${title}\n기록이 없어요.`;
-  return [title, ...list.map(e => `\n<b>${e.time.slice(11, 16)}</b>${e.from ? ` · ${escapeHtml(e.from)}` : ""}` +
-                                  `${e.edited ? " <i>(수정됨)</i>" : ""}\n${escapeHtml(e.text)}`)].join("\n");
-}
-
-// Returns slow work to run after the update is acknowledged, or null.
-async function handleCommand(ctx, chatId, command, arg) {
-  if (command === "start" || command === "help") return send(ctx, chatId, helpText(ctx)), null;
-  if (command === "app" || command === "book") return send(ctx, chatId, `📱 달력 일기장: ${ctx.appUrl}`), null;
-  if (command === "cal") return send(ctx, chatId, await monthCalendar(ctx, parseMonth(arg, ctx.tz))), null;
-  if (command === "day") return send(ctx, chatId, await dayView(ctx, parseDay(arg, ctx.tz))), null;
-  if (command === "analysis" || command === "analyze") {
-    const month = parseMonth(arg, ctx.tz);
-    if (command === "analysis") {
-      const saved = await readText(ctx, `diary/analysis/${month}.md`);
-      await send(ctx, chatId, saved ? analysisMessage(month, saved)
-                                    : `${month} 분석이 아직 없어요. /analyze ${month} 로 만들 수 있어요.`);
-      return null;
-    }
-    await send(ctx, chatId, `🧠 ${month} 일기를 분석하는 중… (1분 안팎)`);
-    ctx.kick = { analysis: { month, chatId } };
-    return null;
-  }
-  await send(ctx, chatId, "알 수 없는 명령입니다. /help 를 입력해 보세요.");
-  return null;
-}
-
-async function handleUpdate(ctx, update) {
-  const edited = !!update.edited_message;
-  const message = update.edited_message || update.message;
-  if (!message) return null;
-  const chatId = message.chat.id, isDiary = chatId === ctx.chatId;
-  const text = (message.text || "").trim();
-  if (!text.startsWith("/")) return isDiary ? handleDiaryMessage(ctx, message, edited) : null;
-  if (edited) return null;
-  const [head, ...rest] = text.split(/\s+/);
-  const command = head.slice(1).split("@")[0].toLowerCase();
-  const arg = rest.join(" ").trim() || null;
-  if (command === "id") return send(ctx, chatId, `chat ID: <code>${chatId}</code>`), null;
-  if (!isDiary) return send(ctx, chatId, "일기장 방이 아니에요. /id 로 확인한 chat ID를 DIARY_CHAT_ID 에 등록하세요."), null;
-  try { return await handleCommand(ctx, chatId, command, arg); }
-  catch (e) {
-    if (e instanceof UserError) { await send(ctx, chatId, `⚠️ ${escapeHtml(e.message)}`); return null; }
-    throw e;
-  }
-}
-
-// ---------------------------------------------------------------- background chores
-
 // Last month's analysis, made once after the month ends (no Cron needed).
 async function ensureMonthlyAnalysis(ctx) {
   const month = previousMonth(ctx.tz);
   if (ctx.budgetLeft() < 10 || await readText(ctx, `diary/analysis/${month}.md`) !== null) return;
-  try {
-    const text = await analyzeMonth(ctx, month);
-    if (ctx.chatId) await send(ctx, ctx.chatId, analysisMessage(month, text));
-  } catch (e) {
-    if (!(e instanceof UserError)) console.warn("monthly analysis failed:", e.message);
-  }
+  try { await analyzeMonth(ctx, month); }
+  catch (e) { if (!(e instanceof UserError)) console.warn("monthly analysis failed:", e.message); }
 }
 
 // ---------------------------------------------------------------- Jobs Durable Object
-// Slow work (voice transcription, analyses) runs in a Durable Object alarm: unlike work after a
-// response (waitUntil, cut off after 30 s on the free plan), an alarm may run for minutes.
+// Keeps recordings until they are transcribed, and does slow work in an alarm: unlike work after
+// a response (cut off after 30 s on the free plan), an alarm may run for minutes.
 
-async function kickJobs(env, payload = {}) {
-  const stub = env.JOBS.get(env.JOBS.idFromName("diary"));
-  await stub.fetch("https://jobs/kick", { method: "POST", body: JSON.stringify(payload) });
-}
+const jobs = env => env.JOBS.get(env.JOBS.idFromName("diary"));
+const kickJobs = env => jobs(env).fetch("https://jobs/kick", { method: "POST" });
 
 export class DiaryJobs {
   constructor(state, env) { this.state = state; this.env = env; }
 
+  audioStore() {
+    const s = this.state.storage;
+    return {
+      async get(id) {
+        const meta = await s.get(`audio:${id}`);
+        if (!meta) return null;
+        const parts = await s.get([...Array(meta.parts).keys()].map(i => `audio:${id}:${i}`));
+        const bytes = new Uint8Array(meta.size);
+        let off = 0;
+        for (let i = 0; i < meta.parts; i++) { const p = parts.get(`audio:${id}:${i}`); bytes.set(p, off); off += p.byteLength; }
+        return { bytes, mime: meta.mime };
+      },
+      async del(id) {
+        const meta = await s.get(`audio:${id}`);
+        if (!meta) return;
+        await s.delete([`audio:${id}`, ...[...Array(meta.parts).keys()].map(i => `audio:${id}:${i}`)]);
+      },
+    };
+  }
+
   async fetch(request) {
-    if (new URL(request.url).pathname === "/status")
-      return Response.json({ alarm: await this.state.storage.getAlarm(), lastRun: (await this.state.storage.get("lastRun")) || null,
-                             queue: (await this.state.storage.get("analysis")) || [] });
-    const body = await request.json().catch(() => ({}));
-    if (body.analysis) {
-      const queue = (await this.state.storage.get("analysis")) || [];
-      if (!queue.some(q => q.month === body.analysis.month)) queue.push(body.analysis);
-      await this.state.storage.put("analysis", queue);
+    const url = new URL(request.url), s = this.state.storage;
+    if (url.pathname === "/audio") {                 // keep a recording until it is transcribed
+      const id = url.searchParams.get("id"), mime = request.headers.get("Content-Type") || "audio/wav";
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      const parts = Math.ceil(bytes.byteLength / AUDIO_PART);
+      const entries = {};
+      for (let i = 0; i < parts; i++) entries[`audio:${id}:${i}`] = bytes.slice(i * AUDIO_PART, (i + 1) * AUDIO_PART);
+      for (const [k, v] of Object.entries(entries)) await s.put(k, v);
+      await s.put(`audio:${id}`, { mime, parts, size: bytes.byteLength, at: Date.now() });
     }
-    if (!(await this.state.storage.getAlarm())) await this.state.storage.setAlarm(Date.now() + 200);
+    if (url.pathname === "/status") {
+      const audio = [...(await s.list({ prefix: "audio:" })).keys()].filter(k => k.split(":").length === 2).length;
+      return Response.json({ alarm: await s.getAlarm(), lastRun: (await s.get("lastRun")) || null, recordings_kept: audio });
+    }
+    if (!(await s.getAlarm())) await s.setAlarm(Date.now() + 200);
     return new Response("ok");
   }
 
@@ -579,45 +403,25 @@ export class DiaryJobs {
     catch (e) { await this.state.storage.put("lastRun", { started, state: "error", error: String(e.message || e).slice(0, 300) }); }
   }
 
+  // Recordings are only kept until they become text; drop any left over for two weeks
+  // (e.g. the entry was deleted in the app before it was transcribed).
+  async dropOldRecordings() {
+    const s = this.state.storage, cutoff = Date.now() - 14 * 86400e3;
+    for (const [key, meta] of await s.list({ prefix: "audio:" })) {
+      if (key.split(":").length === 2 && meta.at < cutoff) await this.audioStore().del(key.slice(6));
+    }
+  }
+
   async run() {
     const ctx = makeCtx(this.env);
-    const queue = (await this.state.storage.get("analysis")) || [];
-    await this.state.storage.put("analysis", []);
-    for (const { month, chatId } of queue) {
-      try { await send(ctx, chatId, analysisMessage(month, await analyzeMonth(ctx, month))); }
-      catch (e) { await send(ctx, chatId, `⚠️ ${escapeHtml(e.message)}`).catch(() => {}); }
-    }
     let more = false;
-    try { more = await transcribePending(ctx); } catch (e) { console.error("transcription round failed:", e.message); more = true; }
+    try { more = await transcribePending(ctx, this.audioStore()); }
+    catch (e) { console.error("transcription round failed:", e.message); more = true; }
     try { await ensureMonthlyAnalysis(ctx); } catch (e) { console.error("monthly analysis failed:", e.message); }
+    await this.dropOldRecordings();
     // Another round for what didn't fit in this one (50 outbound calls per run); failures back off.
-    if (more) await this.state.storage.setAlarm(Date.now() + (ctx.budgetLeft() < 14 ? 2000 : 60_000));
+    if (more) await this.state.storage.setAlarm(Date.now() + (ctx.budgetLeft() < 12 ? 2000 : 60_000));
   }
-}
-
-// ---------------------------------------------------------------- Telegram webhook
-
-async function webhookSecret(env) {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("diary-webhook:" + env.TELEGRAM_BOT_TOKEN));
-  return [...new Uint8Array(hash)].slice(0, 24).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function onTelegram(request, env, waitUntil) {
-  if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== await webhookSecret(env))
-    return new Response("forbidden", { status: 403 });
-  const ctx = makeCtx(env, waitUntil);
-  const update = await request.json();
-  let later;
-  try { later = await handleUpdate(ctx, update); }
-  catch (e) {
-    console.error("update failed, Telegram will resend:", update.update_id, e.message);
-    return new Response("retry", { status: 500 });
-  }
-  if (later) waitUntil(later().catch(e => console.error("background work failed:", e.message)));
-  // Slow work goes to the Jobs Durable Object; every message also nudges it to catch up on leftovers.
-  try { await kickJobs(env, ctx.kick && ctx.kick.analysis ? { analysis: ctx.kick.analysis } : {}); }
-  catch (e) { console.error("could not start jobs:", e.message); }
-  return new Response("ok");
 }
 
 // ---------------------------------------------------------------- app API (/api/...)
@@ -636,18 +440,44 @@ async function appAuthorized(request, env) {
   return res.ok;
 }
 
-async function onApi(request, env, waitUntil) {
+const ISO_MINUTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
+
+async function onApi(request, env) {
   if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (request.method !== "POST") return json({ ok: false, error: "POST only" }, 405);
   if (!await appAuthorized(request, env)) return json({ ok: false, error: "토큰이 올바르지 않아요" }, 401);
-  const ctx = makeCtx(env, waitUntil);
-  const url = new URL(request.url);
+  const ctx = makeCtx(env);
+  const url = new URL(request.url), q = url.searchParams;
   try {
+    if (url.pathname === "/api/voice") {             // a recording from the app → pending entry + kept audio
+      const time = q.get("time"), kind = q.get("kind") === "diary" ? "diary" : "idea";
+      if (!ISO_MINUTE.test(time || "")) throw new UserError("시간 형식이 올바르지 않아요");
+      const mime = (request.headers.get("Content-Type") || "audio/wav").split(";")[0];
+      const body = await request.arrayBuffer();
+      if (!body.byteLength) throw new UserError("녹음이 비어 있어요");
+      if (body.byteLength > MAX_AUDIO_BYTES) throw new UserError("녹음이 너무 길어요 (최대 약 10분)");
+      const id = `v${Date.now()}`;
+      const voice = { store: "worker", mime };
+      if (q.get("caption")) voice.caption = q.get("caption").slice(0, 2000);
+      await jobs(env).fetch(`https://jobs/audio?id=${id}`, { method: "PUT", headers: { "Content-Type": mime }, body });
+      await upsert(ctx, { id, time }, { text: VOICE_PENDING, kind, voice, pending: true, source: "app" },
+                   "diary: voice entry from app");
+      return json({ ok: true, id, month: time.slice(0, 7) });
+    }
+    if (url.pathname === "/api/retry") {             // try a failed transcription again
+      const id = q.get("id"), month = q.get("month");
+      if (!/^\d{4}-\d{2}$/.test(month || "")) throw new UserError("달 형식이 올바르지 않아요");
+      await updateMonth(ctx, month, list => {
+        const e = list.find(x => String(x.id) === String(id));
+        if (!e || !e.pending) return false;
+        delete e.attempts; delete e.pending_error;
+      }, "diary: retry voice transcription");
+      await kickJobs(env);
+      return json({ ok: true });
+    }
     if (url.pathname === "/api/analyze") {
-      const month = parseMonth(url.searchParams.get("month"), ctx.tz);
-      const text = await analyzeMonth(ctx, month);
-      if (ctx.chatId) waitUntil(send(ctx, ctx.chatId, analysisMessage(month, text)).catch(() => {}));
-      return json({ ok: true, month, text });
+      const month = parseMonth(q.get("month"), ctx.tz);
+      return json({ ok: true, month, text: await analyzeMonth(ctx, month) });
     }
     if (url.pathname === "/api/open") {               // app opened: let the Jobs object catch up
       await kickJobs(env);
@@ -663,7 +493,7 @@ async function onApi(request, env, waitUntil) {
 
 async function setup(request, env) {
   const ctx = makeCtx(env);
-  const missing = ["TELEGRAM_BOT_TOKEN", "DIARY_CHAT_ID", "GEMINI_API_KEY", "GITHUB_TOKEN", "GITHUB_REPO"].filter(k => !env[k]);
+  const missing = ["GEMINI_API_KEY", "GITHUB_TOKEN", "GITHUB_REPO"].filter(k => !env[k]);
   if (missing.length) return { ok: false, error: `Secrets 없음: ${missing.join(", ")}` };
   const origin = new URL(request.url).origin;
   const read = await github(ctx, `/contents/.gitignore?ref=main`);
@@ -681,37 +511,28 @@ async function setup(request, env) {
   const g = await ctx.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || "gemini-flash-latest"}`,
                             { headers: { "x-goog-api-key": env.GEMINI_API_KEY } });
   if (!g.ok) return { ok: false, step: "Gemini", status: g.status, hint: "GEMINI_API_KEY 값을 확인하세요" };
+  let telegram = "사용 안 함";
+  if (env.TELEGRAM_BOT_TOKEN) {                       // the app no longer uses Telegram: stop the old webhook
+    const r = await ctx.fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/deleteWebhook`).catch(() => null);
+    telegram = r && r.ok ? "연결 끊음" : "끊기 실패 (상관없음)";
+  }
+  let jobsStatus;
   try {
-    await telegram(ctx, "setWebhook", {
-      url: `${origin}/telegram`, secret_token: await webhookSecret(env), max_connections: 1,
-      allowed_updates: ["message", "edited_message"],
-    });
-    await telegram(ctx, "setMyCommands", { commands: COMMANDS.map(([command, description]) => ({ command, description })) });
-    const info = await telegram(ctx, "getWebhookInfo", {});
-    let jobs;
-    try {
-      if (!env.JOBS) jobs = "JOBS 연결 없음 (배포 설정 확인 필요)";
-      else {
-        await kickJobs(env);
-        jobs = await (await env.JOBS.get(env.JOBS.idFromName("diary")).fetch("https://jobs/status")).json();
-      }
-    } catch (e) { jobs = `오류: ${e.message}`; }
-    return { ok: true, version: VERSION, jobs, webhook: info.url, telegram_pending: info.pending_update_count,
-             last_error: info.last_error_message || null, github: "읽기·쓰기 권한 OK", gemini: "OK",
-             note: "텔레그램 메시지가 오면 바로 처리합니다 (GitHub Actions·Cron 사용 안 함)" };
-  } catch (e) { return { ok: false, step: "텔레그램", error: e.message, hint: "TELEGRAM_BOT_TOKEN 값을 확인하세요" }; }
+    if (!env.JOBS) jobsStatus = "JOBS 연결 없음 (배포 설정 확인 필요)";
+    else { await kickJobs(env); jobsStatus = await (await jobs(env).fetch("https://jobs/status")).json(); }
+  } catch (e) { jobsStatus = `오류: ${e.message}`; }
+  return { ok: true, version: VERSION, github: "읽기·쓰기 권한 OK", gemini: "OK", jobs: jobsStatus, telegram,
+           note: "앱 전용 서버입니다 (GitHub Actions·Cron·텔레그램 사용 안 함)" };
 }
 
 export default {
-  async fetch(request, env, execCtx) {
-    const waitUntil = p => execCtx.waitUntil(p);
+  async fetch(request, env) {
     const path = new URL(request.url).pathname;
     try {
-      if (path === "/telegram" && request.method === "POST") return await onTelegram(request, env, waitUntil);
-      if (path.startsWith("/api/")) return await onApi(request, env, waitUntil);
+      if (path.startsWith("/api/")) return await onApi(request, env);
       return Response.json(await setup(request, env), { headers: { "Cache-Control": "no-store" } });
     } catch (e) {
-      return Response.json({ ok: false, error: String(e.message || e) }, { status: 500 });
+      return Response.json({ ok: false, error: String(e.message || e) }, { status: 500, headers: CORS });
     }
   },
 };

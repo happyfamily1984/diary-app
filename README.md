@@ -14,9 +14,19 @@
 
 폰에서 받기: https://github.com/happyfamily1984/diary-app/releases/download/apk/diary.apk
 
-## ⚡ 일기 처리 서버 (Cloudflare Worker)
+## ⚡ 일기장 서버 (Cloudflare Worker)
 
-`cloudflare/worker.js` 가 일기장의 모든 처리를 합니다 — GitHub Actions 도, Cron 도 쓰지 않습니다.
-텔레그램이 새 메시지마다 Worker 를 부르면(웹훅) 글/음성을 일기 저장소에 저장하고 명령에 답합니다.
-앱의 "AI 분석하기"도 이 Worker 에 직접 요청합니다. 설정 후 Worker 주소를 브라우저로 한 번 열면 웹훅이 연결됩니다.
-토큰들은 코드가 아니라 Worker 의 Secrets 에 넣습니다.
+`cloudflare/worker.js` 가 앱의 서버입니다 — GitHub Actions·Cron·텔레그램을 쓰지 않습니다.
+
+- 🎤 **말로 기록하기**: 앱이 녹음(16kHz WAV)을 보내면 Worker 의 저장 공간(Durable Object)에 잠시 보관했다가
+  Gemini 로 받아써서 일기 저장소에 글로 남기고, 녹음은 지웁니다. 실패하면 녹음을 남겨 두고 앱에서 "다시 시도"할 수 있습니다.
+- 📖 **일기** / 💡 **아이디어**: 기록마다 종류(`kind`)가 있고, 달력에 색으로 구별됩니다. 새 기록은 아이디어가 기본입니다.
+- 🧠 **이 달의 분석**: 일기와 아이디어를 함께 분석합니다.
+
+설정 후 Worker 주소를 브라우저로 한 번 열면 앱이 서버 주소를 알게 되고(예전 텔레그램 연결은 끊김), 설정을 점검합니다.
+토큰들은 코드가 아니라 Worker 의 Secrets 에 넣습니다 (`GEMINI_API_KEY`, `GITHUB_TOKEN`, `GITHUB_REPO`).
+
+## 📱 APK 서명
+
+`APK_KEYSTORE_B64`(키스토어 base64), `APK_KEYSTORE_PASSWORD` 비밀값을 이 저장소에 넣으면 그 키로 서명해서,
+앱을 지우지 않고 덮어쓰기로 업데이트할 수 있습니다. 없으면 빌드마다 바뀌는 디버그 키로 서명합니다.

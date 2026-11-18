@@ -18,6 +18,7 @@
     --text: #26283d; --muted: #8b8ca6; --line: #e6e7f2;
     --card: #ffffff; --shadow: 0 10px 28px rgba(96, 104, 190, .13);
     --pink: #ec4b84; --pink-2: #f7709f; --pink-soft: #fde4ec; --pink-ring: #f9b4cb;
+    --idea: #f59f00; --idea-soft: #fff2c9; --idea-text: #a35f00; --idea-ring: #ffd36b;
     --lav: #ede9fe; --lav-text: #6a5acd; --sat: #3b5bdb; --sun: #e64980; --danger: #d6336c;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -26,6 +27,7 @@
          font: 16px/1.6 "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo",
                Roboto, "Noto Sans KR", sans-serif;
          -webkit-text-size-adjust: 100%; }
+  body.sheet-open { overflow: hidden; }
   textarea, input, button { font-family: inherit; }
 
   /* ---------- background: sky, clouds, hills ---------- */
@@ -35,7 +37,7 @@
   .hills { position: fixed; left: 0; right: 0; bottom: 0; height: 120px; z-index: -1; pointer-events: none; }
   .hills svg { width: 100%; height: 100%; display: block; }
 
-  main { max-width: 560px; margin: 0 auto; padding: calc(12px + env(safe-area-inset-top)) 16px calc(140px + env(safe-area-inset-bottom));
+  main { max-width: 560px; margin: 0 auto; padding: calc(12px + env(safe-area-inset-top)) 16px calc(150px + env(safe-area-inset-bottom));
          position: relative; }
 
   /* ---------- shared bits ---------- */
@@ -84,26 +86,32 @@
          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
          font-size: clamp(1.05rem, 4.8vw, 1.28rem); color: var(--text); font-variant-numeric: tabular-nums; min-width: 0; }
   .day .dots { height: 10px; display: flex; gap: 3px; }
-  .day .dots i { width: 7px; height: 7px; border-radius: 50%; background: #3d3f55; }
-  .day.has { background: var(--pink-soft); font-weight: 700; }
+  .day .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--pink); }
+  .day .dots i.idea { background: var(--idea); }
+  .day.has-diary { background: var(--pink-soft); font-weight: 700; }
+  .day.has-idea { background: var(--idea-soft); font-weight: 700; }
+  .day.has-diary.has-idea { background: linear-gradient(135deg, var(--pink-soft) 50%, var(--idea-soft) 50%); }
   .day.today:not(.sel) { box-shadow: inset 0 0 0 2px var(--pink-ring); }
   .day.sel { background: linear-gradient(160deg, var(--pink-2), var(--pink)); color: #fff; font-weight: 700;
              box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--pink-ring), 0 8px 16px rgba(236,75,132,.3); }
   .day.sel .dots i { background: #fff; }
+  .day.sel .dots i.idea { background: #ffe066; }
   .cal-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
   .cal-foot .stat { display: flex; align-items: center; gap: 8px; color: #6b6d86; font-size: .95rem; min-width: 0; }
   .cal-foot .stat svg { width: 26px; height: 26px; color: var(--pink); flex: none; }
   .pill.today-btn svg { color: var(--pink); }
+  .legend { display: flex; gap: 14px; margin-top: 8px; font-size: .85rem; color: #6b6d86; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--pink); margin-right: 5px; vertical-align: 1px; }
+  .legend i.idea { background: var(--idea); }
 
   /* ---------- tabs ---------- */
-  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-  .tab { border: 0; border-radius: 999px; padding: 14px 8px; font-size: clamp(.95rem, 4.2vw, 1.08rem); font-weight: 700; cursor: pointer; white-space: nowrap;
-         display: flex; align-items: center; justify-content: center; gap: 8px; background: #fff; color: var(--text);
-         box-shadow: var(--shadow); }
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .tab { border: 0; border-radius: 999px; padding: 13px 4px; font-size: clamp(.86rem, 3.9vw, 1rem); font-weight: 700; cursor: pointer;
+         white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 5px; background: #fff;
+         color: var(--text); box-shadow: var(--shadow); }
   .tab.on { color: #fff; background: linear-gradient(90deg, #ff8fa3, var(--pink) 60%, #e8458c);
             box-shadow: 0 10px 22px rgba(236,75,132,.3); }
-  .tab .emo { font-size: 1.25em; }
-  .tab .chev { margin-left: 0; }
+  .tab .emo { font-size: 1.2em; }
 
   /* ---------- day summary card (home) ---------- */
   .day-card { position: relative; display: flex; gap: 12px; align-items: flex-start; padding-left: 20px; overflow: hidden; }
@@ -116,17 +124,33 @@
   .day-card .pill { padding: 7px 13px; }
   .day-card .head { display: flex; align-items: center; justify-content: space-between; gap: 6px 8px; flex-wrap: wrap; }
   .day-card h2 { margin: 0; font-size: 1.08rem; white-space: nowrap; }
+  .day-card .counts { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: .82rem; font-weight: 600; border-radius: 999px; padding: 2px 10px; background: var(--pink-soft); color: #d9366f; }
+  .chip.idea { background: var(--idea-soft); color: var(--idea-text); }
   .day-card .preview { color: #5e6078; font-size: .95rem; margin-top: 6px;
                        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .day-card .more { margin-top: 8px; border: 0; background: none; color: var(--pink); font-weight: 600; padding: 0; cursor: pointer; }
 
+  /* ---------- ideas card (home) ---------- */
+  .ideas { position: relative; overflow: hidden; padding-left: 20px; }
+  .ideas::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+                   background: linear-gradient(180deg, #ffd43b, var(--idea)); }
+  .ideas .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .ideas h2 { margin: 0; font-size: 1.12rem; white-space: nowrap; }
+  .idea-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .idea-item:first-of-type { border-top: 0; }
+  .idea-item .when { flex: none; width: 56px; text-align: center; font-size: .82rem; color: var(--idea-text); font-weight: 700;
+                     background: var(--idea-soft); border-radius: 12px; padding: 6px 0; line-height: 1.3; }
+  .idea-item .txt { flex: 1; min-width: 0; color: #43455d; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .ideas .empty { color: var(--muted); padding: 8px 0 4px; }
+
   /* ---------- analysis card ---------- */
   .ana { position: relative; overflow: hidden; }
-  .ana h2 { margin: 0 0 6px; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; }
-  .ana .art { position: absolute; right: 6px; top: 34px; width: 108px; height: 108px; pointer-events: none; }
-  .ana.empty { min-height: 190px; }
+  .ana h2 { margin: 0 0 6px; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .ana .sub { font-size: .88rem; color: var(--muted); margin: -2px 0 6px; }
+  .ana .art { position: absolute; right: 6px; top: 40px; width: 108px; height: 108px; pointer-events: none; }
+  .ana.empty { min-height: 200px; }
   .ana.empty .msg { padding-right: 110px; }
-  .ana h2 { white-space: nowrap; }
   .ana .text { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
   .ana .actions { margin-top: 16px; }
   .ana.has .art { display: none; }
@@ -145,29 +169,58 @@
   .day-title input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
   .day-title .caret { width: 18px; height: 18px; color: var(--muted); }
   .entry { background: #fff; border-radius: 24px; box-shadow: var(--shadow); padding: 16px 16px 18px; margin-bottom: 16px; }
+  .entry.idea { box-shadow: var(--shadow), inset 0 0 0 2px #ffe8a3; }
   .entry .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
   .tpill { border-radius: 999px; padding: 4px 14px; font-weight: 700; font-size: 1rem; background: var(--lav); color: var(--lav-text); white-space: nowrap; }
   .tpill.edited { background: #ffe1eb; color: #d9366f; }
+  .tpill.idea { background: #fff1c2; color: var(--idea-text); }
   .tpill .who { font-weight: 500; }
-  .tools { display: flex; align-items: center; }
-  .tools { flex: none; }
+  .tools { display: flex; align-items: center; flex: none; }
   .tools button, .tools span { border: 0; background: none; font-size: 1.2rem; padding: 4px 7px; cursor: pointer; line-height: 1; }
   .tools span { cursor: default; opacity: .75; }
   .tools button + button, .tools span + button { border-left: 1px solid var(--line); }
+  .tools button:disabled { opacity: .35; cursor: default; }
   .entry .content { display: flex; gap: 14px; align-items: flex-start; }
   .bubble { flex: none; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 1.85rem;
             box-shadow: inset 0 0 0 4px rgba(255,255,255,.6); }
   .entry .text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; font-size: 1.02rem; line-height: 1.75; }
-  .entry.empty { text-align: center; color: var(--muted); padding: 28px 18px; }
+  .entry .wait { color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .entry .fail { color: var(--danger); }
+  .entry .fail .pill { margin-top: 8px; color: var(--text); }
+  .entry.empty { text-align: center; color: var(--muted); padding: 28px 18px; white-space: pre-line; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid #d9dbee; border-top-color: var(--pink); animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-  .editor { background: #fff; border-radius: 24px; box-shadow: var(--shadow); padding: 14px; margin-bottom: 16px;
-            border: 2px solid var(--pink-ring); }
-  .editor textarea { width: 100%; min-height: 160px; resize: vertical; border: 0; outline: none; background: transparent;
-                     color: var(--text); font-size: 1.02rem; line-height: 1.7; }
-  .editor .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
-  .editor input[type=time] { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; font-size: .98rem; background: #f8f8fd; }
-  .editor .btns { display: flex; gap: 8px; }
-  .editor .btn-pink { padding: 9px 20px; font-size: .98rem; }
+  /* ---------- floating write button ---------- */
+  .fab { position: fixed; right: max(18px, calc(50% - 262px)); bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 8;
+         width: 64px; height: 64px; border-radius: 50%; border: 0; color: #fff; font-size: 2rem; line-height: 1; cursor: pointer;
+         background: linear-gradient(150deg, #ffb347, var(--pink) 70%); box-shadow: 0 12px 26px rgba(236,75,132,.42);
+         display: grid; place-items: center; }
+
+  /* ---------- composer (bottom sheet) ---------- */
+  .sheet-back { position: fixed; inset: 0; z-index: 30; background: rgba(38,40,61,.35); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { width: 100%; max-width: 560px; background: #fff; border-radius: 28px 28px 0 0; box-shadow: 0 -10px 30px rgba(60,60,120,.18);
+           padding: 10px 18px calc(18px + env(safe-area-inset-bottom)); max-height: 92vh; overflow-y: auto; }
+  .grip { width: 44px; height: 5px; border-radius: 3px; background: #dcdcea; margin: 0 auto 12px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; background: #f2f2f8; border-radius: 999px; padding: 4px; gap: 4px; }
+  .seg button { border: 0; border-radius: 999px; padding: 10px 6px; font-size: 1rem; font-weight: 700; background: transparent;
+                color: #6b6d86; cursor: pointer; }
+  .seg button.on[data-kind=idea] { background: #fff; color: var(--idea-text); box-shadow: 0 0 0 2px var(--idea-ring); }
+  .seg button.on[data-kind=diary] { background: #fff; color: #d9366f; box-shadow: 0 0 0 2px var(--pink-ring); }
+  .when { display: flex; gap: 8px; margin: 12px 0 8px; }
+  .when input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 9px 10px; font-size: .98rem; background: #f8f8fd; color: var(--text); }
+  .sheet textarea { width: 100%; min-height: 150px; resize: vertical; border: 1px solid var(--line); border-radius: 18px; outline: none;
+                    background: #fcfcff; color: var(--text); font-size: 1.04rem; line-height: 1.7; padding: 12px 14px; }
+  .sheet textarea:focus { border-color: var(--pink-ring); }
+  .mic { width: 100%; margin-top: 10px; border: 2px dashed var(--pink-ring); background: #fff7fa; color: #d9366f; border-radius: 18px;
+         padding: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; }
+  .recording { margin-top: 10px; border-radius: 18px; background: #fff0f5; padding: 14px; display: flex; align-items: center; gap: 10px; }
+  .recording .dot { width: 12px; height: 12px; border-radius: 50%; background: #e03131; animation: blink 1s infinite; flex: none; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .recording .clock { font-weight: 800; font-variant-numeric: tabular-nums; flex: 1; }
+  .recording .level { height: 6px; border-radius: 3px; background: var(--pink); width: 0; transition: width .1s; max-width: 90px; }
+  .sheet .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .sheet .hint { font-size: .82rem; color: var(--muted); margin-top: 6px; }
 
   /* ---------- setup ---------- */
   .setup h2 { margin: 4px 0 8px; }
@@ -177,9 +230,9 @@
   .setup ol { padding-left: 20px; margin: 0 0 14px; }
   .setup .logo { width: 84px; height: 84px; border-radius: 22px; display: block; margin: 4px auto 8px; box-shadow: var(--shadow); }
 
-  .toast { position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom)); transform: translateX(-50%);
-           background: #2b2d45; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: .92rem; z-index: 20;
-           box-shadow: 0 8px 20px rgba(0,0,0,.2); max-width: 90vw; }
+  .toast { position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+           background: #2b2d45; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: .92rem; z-index: 40;
+           box-shadow: 0 8px 20px rgba(0,0,0,.2); max-width: 90vw; text-align: center; }
 </style>
 </head>
 <body>
@@ -206,7 +259,7 @@
   <section id="setup" class="card setup" hidden>
     <img class="logo" src="icon-192.png" alt="">
     <h2>📔 일기장 연결</h2>
-    <p class="small muted">일기가 저장되는 GitHub 저장소를 읽어 옵니다. 토큰은 이 기기에만 저장됩니다.</p>
+    <p class="small muted">기록이 저장되는 GitHub 저장소를 읽어 옵니다. 토큰은 이 기기에만 저장됩니다.</p>
     <ol class="small muted">
       <li>GitHub → Settings → Developer settings → <b>Fine-grained tokens</b> → Generate new token</li>
       <li>Repository access: <b>Only select repositories</b> → 일기 저장소 하나만 선택</li>
@@ -255,14 +308,18 @@
         <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4M9 15l2 2 4-4"/></svg><span id="stats"></span></span>
         <button class="pill today-btn" id="todayBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>오늘</button>
       </div>
+      <div class="legend"><span><i></i>일기</span><span><i class="idea"></i>아이디어</span></div>
     </section>
 
     <div class="tabs">
-      <button class="tab on" id="tabDay"><span class="emo">📖</span>일기 쓰기<span class="chev">›</span></button>
-      <button class="tab" id="tabAnalysis"><span class="emo">🧠</span>이 달의 분석<span class="chev">›</span></button>
+      <button class="tab on" id="tabDay"><span class="emo">📖</span>일기</button>
+      <button class="tab" id="tabIdeas"><span class="emo">💡</span>아이디어</button>
+      <button class="tab" id="tabAnalysis"><span class="emo">🧠</span>이 달의 분석</button>
     </div>
 
     <section class="card day-card" id="dayCard"></section>
+
+    <section class="card ideas" id="ideasCard" hidden></section>
 
     <section class="card ana" id="analysisCard" hidden>
       <!-- note with heart and pencil -->
@@ -277,6 +334,7 @@
         <g fill="#f9c74f"><path d="M100 10l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></g><g fill="#fde4ec"><path d="M14 30l1.5 4 4 1.5-4 1.5-1.5 4-1.5-4-4-1.5 4-1.5z"/></g>
       </svg>
       <h2 id="analysisTitle"></h2>
+      <div class="sub">일기와 아이디어를 함께 살펴봐요</div>
       <div id="analysisBody"></div>
       <div class="error" id="analysisError"></div>
       <div class="actions"><button class="btn-pink" id="analyzeBtn">✨ AI 분석하기 <span class="chev">›</span></button></div>
@@ -305,12 +363,35 @@
   </section>
 </main>
 
+<button class="fab" id="fab" aria-label="기록하기" hidden>＋</button>
+
+<!-- write / speak: idea (default) or diary -->
+<div class="sheet-back" id="composer" hidden>
+  <div class="sheet" role="dialog" aria-label="기록하기">
+    <div class="grip"></div>
+    <div class="seg" id="kindSeg">
+      <button data-kind="idea">💡 아이디어</button>
+      <button data-kind="diary">📖 일기</button>
+    </div>
+    <div class="when"><input type="date" id="cDate" aria-label="날짜"><input type="time" id="cTime" aria-label="시간"></div>
+    <textarea id="cText" lang="ko" spellcheck="false" placeholder="여기를 눌러 쓰거나, 아래 🎤 로 말해 보세요"></textarea>
+    <button class="mic" id="micBtn">🎤 말로 기록하기</button>
+    <div class="recording" id="recBox" hidden>
+      <span class="dot"></span><span class="clock" id="recClock">00:00</span><span class="level" id="recLevel"></span>
+      <button class="pill" id="recCancel">취소</button><button class="btn-pink" id="recStop">■ 완료</button>
+    </div>
+    <div class="hint" id="cHint">말로 기록하면 잠시 뒤 글로 바뀌어요. 최대 10분까지 녹음돼요.</div>
+    <div class="row"><button class="pill" id="cCancel">취소</button><button class="btn-pink" id="cSave">저장</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 <script>
 // Bump on every change: open apps compare this with the published page and reload themselves.
-const APP_VERSION = "2026-11-17.2";
+const APP_VERSION = "2026-11-18.1";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
+const KIND = { idea: "아이디어", diary: "일기" };
 const pad = n => String(n).padStart(2, "0");
 const el = (tag, cls, text) => { const e = document.createElement(tag);
   if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -327,6 +408,10 @@ const now = new Date();
 const todayIso = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
 let y = now.getFullYear(), m = now.getMonth() + 1, selected = null, tab = "day";
 let viewDay = null;   // "YYYY-MM-DD" while the day screen is open
+
+const kindOf = e => (e.kind === "idea" ? "idea" : "diary");
+const plainText = t => (t || "").replace(/^🎙\s*/, "");
+const failed = e => e.pending && (e.attempts || 0) >= 5;
 
 // ---------- GitHub API ----------
 async function gh(path, opts = {}) {
@@ -385,7 +470,7 @@ async function readForWrite(path) {
   return { entries: text ? JSON.parse(text) : [], sha: f.sha };
 }
 
-// Re-reads the month file, applies `mutate`, and writes it back; retries if the bot wrote meanwhile.
+// Re-reads the month file, applies `mutate`, and writes it back; retries if the server wrote meanwhile.
 async function updateMonth(key, mutate, message) {
   const path = `diary/entries/${key}.json`;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -413,37 +498,13 @@ function isoWithOffset(date, hhmm) {
 }
 const nowHHMM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
-let editing = null;   // { id: entry id or "new", date, time, text }
-let saving = false;
-
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.hidden = false;
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.hidden = true, 2500);
-}
-
-async function saveEditor() {
-  const ed = editing, text = ed.text.trim();
-  if (!text) { toast("내용을 입력해 주세요"); return; }
-  const key = ed.date.slice(0, 7), time = isoWithOffset(ed.date, ed.time);
-  saving = true; renderDayView();
-  try {
-    if (ed.id === "new") {
-      await updateMonth(key, list => list.push({ id: "w" + Date.now(), time, text, source: "app" }),
-                        "diary: add entry from app");
-    } else {
-      await updateMonth(key, list => {
-        const e = list.find(x => String(x.id) === String(ed.id));
-        if (!e) throw new Error("이미 삭제된 일기예요.");
-        e.text = text; e.time = time; e.edited = isoWithOffset(todayIso, nowHHMM());
-      }, "diary: edit entry from app");
-    }
-    editing = null; toast("저장했어요");
-  } catch (e) { toast(e.message); }
-  finally { saving = false; render(); }
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.hidden = true, 2800);
 }
 
 async function deleteEntry(entry) {
-  if (!confirm("이 일기를 삭제할까요? 되돌릴 수 없어요.")) return;
+  if (!confirm(`이 ${KIND[kindOf(entry)]}를 삭제할까요? 되돌릴 수 없어요.`)) return;
   const key = entry.time.slice(0, 7);
   try {
     await updateMonth(key, list => {
@@ -465,13 +526,12 @@ const PICTURES = [
   [/감사|고맙|행복|기뻤|좋았|보람/, "🌷", "#ffe4ef"], [/피곤|힘들|지쳤|졸|두렵|걱정/, "🌙", "#ece9fb"],
 ];
 function pictureFor(e) {
+  if (kindOf(e) === "idea") return ["💡", "#fff2c9"];
   const t = e.text || "";
   for (const [re, emo, bg] of PICTURES) if (re.test(t)) return [emo, bg];
   if (e.voice) return ["🎙️", "#fde8ef"];
-  if (/^\[사진/.test(t)) return ["📷", "#e8f1ff"];
   return ["📝", "#f1effc"];
 }
-const plainText = t => (t || "").replace(/^🎙\s*/, "");
 
 // ---------- render: home ----------
 const monthKey = () => `${y}-${pad(m)}`;
@@ -492,22 +552,26 @@ function render() {
   if (!selected || selected.slice(0, 7) !== key)
     selected = key === todayIso.slice(0, 7) ? todayIso : Object.keys(byDay).sort().pop() || `${key}-01`;
   for (let d = 1, days = new Date(y, m, 0).getDate(); d <= days; d++) {
-    const iso = `${key}-${pad(d)}`, list = byDay[iso];
-    const b = el("button", "day");
-    const dots = el("span", "dots");
-    for (let i = 0; i < Math.min(list ? list.length : 0, 3); i++) dots.append(el("i"));
+    const iso = `${key}-${pad(d)}`, list = byDay[iso] || [];
+    const b = el("button", "day"), dots = el("span", "dots");
+    const diary = list.filter(e => kindOf(e) === "diary").length, idea = list.length - diary;
+    for (let i = 0; i < Math.min(diary, idea ? 2 : 3); i++) dots.append(el("i"));
+    for (let i = 0; i < Math.min(idea, diary ? 2 : 3); i++) dots.append(el("i", "idea"));
     b.append(el("span", null, d), dots);
-    if (list) b.classList.add("has");
+    if (diary) b.classList.add("has-diary");
+    if (idea) b.classList.add("has-idea");
     if (iso === todayIso) b.classList.add("today");
     if (iso === selected) b.classList.add("sel");
-    // first tap selects the day; tapping the selected day (with entries) opens it
-    b.onclick = () => { if (iso === selected && list) openDay(iso); else { selected = iso; tab = "day"; render(); } };
+    // first tap selects the day; tapping the selected day (with records) opens it
+    b.onclick = () => { if (iso === selected && list.length) openDay(iso); else { selected = iso; if (tab === "analysis") tab = "day"; render(); } };
     grid.append(b);
   }
+  const ideaCount = entries.filter(e => kindOf(e) === "idea").length;
   $("stats").textContent = entries.length
-    ? `기록한 날 ${Object.keys(byDay).length}일 · 일기 ${entries.length}개` : "이 달에는 기록이 없어요";
+    ? `기록한 날 ${Object.keys(byDay).length}일 · 일기 ${entries.length - ideaCount} · 아이디어 ${ideaCount}` : "이 달에는 기록이 없어요";
 
   renderDayCard();
+  renderIdeas();
 
   // analysis card
   const a = cache.analysis[key];
@@ -515,16 +579,15 @@ function render() {
   const card = $("analysisCard");
   card.classList.toggle("has", !!a); card.classList.toggle("empty", !a);
   $("analysisBody").replaceChildren(a ? el("div", "text", a)
-    : el("div", "muted msg", entries.length ? "아직 분석이 없어요." : "분석할 일기가 없어요."));
+    : el("div", "muted msg", entries.length ? "아직 분석이 없어요." : "분석할 기록이 없어요."));
   $("analyzeBtn").firstChild.textContent = a ? "🔄 다시 분석하기 " : "✨ AI 분석하기 ";
   $("analyzeBtn").disabled = !entries.length || analyzing;
 
-  $("tabDay").classList.toggle("on", tab === "day");
-  $("tabAnalysis").classList.toggle("on", tab === "analysis");
-  $("dayCard").hidden = tab !== "day";
-  card.hidden = tab !== "analysis";
-
-  if (viewDay && !editing) renderDayView();
+  for (const [t, btn, box] of [["day", "tabDay", "dayCard"], ["idea", "tabIdeas", "ideasCard"], ["analysis", "tabAnalysis", "analysisCard"]]) {
+    $(btn).classList.toggle("on", tab === t);
+    $(box).hidden = tab !== t;
+  }
+  if (viewDay) renderDayView();
 }
 
 function renderDayCard() {
@@ -534,37 +597,55 @@ function renderDayCard() {
   const box = el("div", "datebox");
   box.append(el("span", null, `${mm}월`), el("b", null, `${dd}일`), el("span", "wd", `(${weekdayOf(selected)})`));
   const body = el("div", "body"), head = el("div", "head");
-  head.append(el("h2", null, selected === todayIso ? "📖 오늘의 일기" : "📖 이 날의 일기"));
+  head.append(el("h2", null, selected === todayIso ? "📖 오늘의 기록" : "📖 이 날의 기록"));
   const add = el("button", "pill", "＋ 쓰기");
-  add.onclick = ev => { ev.stopPropagation(); openDay(selected, true); };
+  add.onclick = ev => { ev.stopPropagation(); openComposer({ date: selected }); };
   head.append(add);
   body.append(head);
   if (list.length) {
-    body.append(el("div", "preview", plainText(list[list.length - 1].text)));
-    const more = el("button", "more", `일기 ${list.length}개 모두 보기 ›`);
+    const ideas = list.filter(e => kindOf(e) === "idea").length, counts = el("div", "counts");
+    if (list.length - ideas) counts.append(el("span", "chip", `📖 일기 ${list.length - ideas}`));
+    if (ideas) counts.append(el("span", "chip idea", `💡 아이디어 ${ideas}`));
+    const last = list[list.length - 1];
+    body.append(counts, el("div", "preview", last.pending ? "🎙 받아쓰는 중…" : plainText(last.text)));
+    const more = el("button", "more", `${list.length}개 모두 보기 ›`);
     more.onclick = () => openDay(selected);
     body.append(more);
   } else {
-    body.append(el("div", "preview", "이 날은 기록이 없어요. ＋ 쓰기 로 남기거나 텔레그램 일기방에 보내 보세요."));
+    body.append(el("div", "preview", "이 날은 기록이 없어요. ＋ 쓰기 로 글을 쓰거나 말로 남겨 보세요."));
   }
   card.replaceChildren(box, body);
   card.onclick = ev => { if (list.length && !ev.target.closest("button")) openDay(selected); };
 }
 
+function renderIdeas() {
+  const card = $("ideasCard");
+  const ideas = (cache.entries[monthKey()] || []).filter(e => kindOf(e) === "idea").slice().reverse();
+  const head = el("div", "head");
+  head.append(el("h2", null, `💡 ${m}월 아이디어 ${ideas.length ? ideas.length + "개" : ""}`));
+  const add = el("button", "pill", "＋ 기록");
+  add.onclick = () => openComposer({ kind: "idea" });
+  head.append(add);
+  card.replaceChildren(head);
+  if (!ideas.length) card.append(el("div", "empty", "떠오른 생각을 바로 적거나 말로 남겨 보세요. 오른쪽 아래 ＋ 버튼으로도 기록할 수 있어요."));
+  for (const e of ideas) {
+    const item = el("div", "idea-item"), when = el("div", "when");
+    const [, mm, dd] = e.time.slice(0, 10).split("-").map(Number);
+    when.append(el("div", null, `${mm}/${dd}`), el("div", null, e.time.slice(11, 16)));
+    item.append(when, el("div", "txt", e.pending ? (failed(e) ? "⚠️ 받아쓰기 실패 — 눌러서 다시 시도" : "🎙 받아쓰는 중…") : plainText(e.text)));
+    item.onclick = () => openDay(e.time.slice(0, 10));
+    card.append(item);
+  }
+}
+
 // ---------- day screen ----------
-function openDay(iso, startWriting) {
+function openDay(iso) {
   if (location.hash !== `#day=${iso}`) location.hash = `day=${iso}`;   // back button returns home
   else showDayFromHash();
-  if (startWriting) setTimeout(() => openEditor({ id: "new", date: iso,
-    time: iso === todayIso ? nowHHMM() : "21:00", text: "" }), 0);
 }
 
 async function showDayFromHash() {
   const mt = location.hash.match(/^#day=(\d{4}-\d{2}-\d{2})$/);
-  if (editing && (!mt || mt[1] !== viewDay)) {
-    if (!confirm("작성 중인 내용을 버릴까요?")) { location.hash = `day=${viewDay}`; return; }
-    editing = null;
-  }
   viewDay = mt ? mt[1] : null;
   $("dayView").hidden = !viewDay; $("app").hidden = !!viewDay;
   window.scrollTo(0, 0);
@@ -574,7 +655,7 @@ async function showDayFromHash() {
   if (yy !== y || mm !== m) { y = yy; m = mm; }
   renderDayView();
   try { await loadMonth(viewDay.slice(0, 7)); } catch (e) { toast(e.message); }
-  if (!editing) renderDayView();
+  renderDayView();
 }
 
 function renderDayView() {
@@ -582,78 +663,44 @@ function renderDayView() {
   const [, mm, dd] = viewDay.split("-").map(Number);
   $("dayTitle").textContent = `📖 ${mm}월 ${dd}일 (${weekdayOf(viewDay)})`;
   $("datePick").value = viewDay;
-  $("dayAdd").disabled = !!editing;
   const listEl = $("dayList"), list = entriesOn(viewDay);
   listEl.replaceChildren();
-  if (editing?.id === "new") listEl.append(editorEl());
-  for (const e of list) {
-    if (editing && String(editing.id) === String(e.id)) { listEl.append(editorEl()); continue; }
-    const card = el("div", "entry"), row = el("div", "row");
-    const t = el("span", "tpill" + (e.edited ? " edited" : ""), e.time.slice(11, 16));
-    if (e.from) t.append(el("span", "who", ` · ${e.from}`));
-    if (e.edited) t.append(el("span", "who", " (수정됨)"));
-    const tools = el("span", "tools");
-    if (e.voice) { const v = el("span", null, "🎙️"); v.title = "음성으로 쓴 일기"; tools.append(v); }
-    const edit = el("button", null, "✏️"), del = el("button", null, "🗑️");
-    edit.title = "수정"; del.title = "삭제"; edit.disabled = del.disabled = !!editing;
-    edit.onclick = () => openEditor({ id: e.id, date: viewDay, time: e.time.slice(11, 16), text: e.text });
-    del.onclick = () => deleteEntry(e);
-    tools.append(edit, del);
-    row.append(t, tools);
-    const [emo, bg] = pictureFor(e);
-    const bubble = el("div", "bubble", emo); bubble.style.background = bg;
-    const content = el("div", "content");
-    content.append(bubble, el("div", "text", plainText(e.text)));
-    card.append(row, content);
-    listEl.append(card);
-  }
-  if (!list.length && !editing)
-    listEl.append(el("div", "entry empty", "이 날은 기록이 없어요.\n＋ 쓰기 로 남기거나 텔레그램 일기방에 보내 보세요."));
+  for (const e of list) listEl.append(entryCard(e));
+  if (!list.length)
+    listEl.append(el("div", "entry empty", "이 날은 기록이 없어요.\n＋ 쓰기 로 글을 쓰거나 말로 남겨 보세요."));
 }
 
-// Opens the editor without focusing it: on Android WebViews a script-made focus can leave the
-// keyboard attached to a stale input connection (caret shows, typing does nothing). A real tap
-// on the textarea always connects the keyboard properly.
-function openEditor(state) {
-  editing = state;
-  renderDayView();
-  const ta = $("dayList").querySelector(".editor textarea");
-  if (ta) ta.scrollIntoView({ block: "center", behavior: "smooth" });
-}
-
-function editorEl() {
-  const box = el("div", "editor");
-  const ta = el("textarea"); ta.value = editing.text;
-  ta.placeholder = "여기를 눌러 쓰기 시작하세요";
-  ta.lang = "ko"; ta.spellcheck = false;
-  ta.oninput = () => { editing.text = ta.value; typed = 0; };
-  ta.addEventListener("compositionupdate", () => { typed = 0; });
-  ta.addEventListener("compositionend", () => { editing.text = ta.value; });
-  // Safety net: keys arrive but no text does → the keyboard lost its connection; reconnect it.
-  let typed = 0, healed = false;
-  ta.addEventListener("keydown", e => {
-    if (healed || e.key === "Backspace" || e.key === "Enter" || e.key === "Tab") return;
-    typed++;
-    setTimeout(() => {
-      if (typed >= 2 && !healed && document.activeElement === ta) {
-        healed = true;
-        const pos = ta.selectionStart;
-        ta.blur();
-        setTimeout(() => { ta.focus(); ta.setSelectionRange(pos, pos); }, 60);
-      }
-    }, 500);
-  });
-  const time = el("input"); time.type = "time"; time.value = editing.time;
-  time.onchange = () => { editing.time = time.value || editing.time; };
-  const cancel = el("button", "pill", "취소"), save = el("button", "btn-pink", saving ? "저장 중…" : "저장");
-  cancel.disabled = save.disabled = saving;
-  cancel.onclick = () => { editing = null; renderDayView(); };
-  save.onclick = saveEditor;
-  const row = el("div", "row"), btns = el("span", "btns");
-  btns.append(cancel, save);
-  row.append(time, btns);
-  box.append(ta, row);
-  return box;
+function entryCard(e) {
+  const kind = kindOf(e);
+  const card = el("div", "entry " + kind), row = el("div", "row");
+  const t = el("span", "tpill" + (kind === "idea" ? " idea" : e.edited ? " edited" : ""),
+               (kind === "idea" ? "💡 " : "") + e.time.slice(11, 16));
+  if (e.from) t.append(el("span", "who", ` · ${e.from}`));
+  if (e.edited) t.append(el("span", "who", " (수정됨)"));
+  const tools = el("span", "tools");
+  if (e.voice) { const v = el("span", null, "🎙️"); v.title = "말로 남긴 기록"; tools.append(v); }
+  const edit = el("button", null, "✏️"), del = el("button", null, "🗑️");
+  edit.title = "수정"; del.title = "삭제"; edit.disabled = !!e.pending;
+  edit.onclick = () => openComposer({ id: e.id, kind, date: e.time.slice(0, 10), time: e.time.slice(11, 16), text: e.text });
+  del.onclick = () => deleteEntry(e);
+  tools.append(edit, del);
+  row.append(t, tools);
+  const [emo, bg] = pictureFor(e);
+  const bubble = el("div", "bubble", emo); bubble.style.background = bg;
+  const content = el("div", "content"), text = el("div", "text");
+  if (failed(e)) {
+    text.classList.add("fail");
+    text.append(el("div", null, "⚠️ 받아쓰기에 실패했어요."), el("div", "small muted", e.pending_error || ""));
+    const retry = el("button", "pill", "🔄 다시 시도");
+    retry.onclick = () => retryVoice(e);
+    text.append(retry);
+  } else if (e.pending) {
+    const w = el("div", "wait"); w.append(el("span", "spin"), el("span", null, "말한 내용을 글로 바꾸는 중이에요…"));
+    text.append(w);
+  } else text.textContent = plainText(e.text);
+  content.append(bubble, text);
+  card.append(row, content);
+  return card;
 }
 
 async function show(force) {
@@ -664,6 +711,7 @@ async function show(force) {
     $("syncInfo").textContent = `불러온 시각 ${new Date().toTimeString().slice(0, 5)}`;
   } catch (e) { $("loadError").textContent = e.message; }
   render();
+  watchPending();
 }
 
 function move(delta) {
@@ -675,7 +723,218 @@ async function refresh() {
   try { await show(true); toast("새로 불러왔어요"); } catch {}
 }
 
-// ---------- AI analysis: ask the diary's Cloudflare Worker (address saved in diary/config.json) ----------
+// ---------- composer: write or speak an idea (default) or a diary entry ----------
+let composer = null;      // { id: entry id or "new", kind, ... } while the sheet is open
+
+function openComposer(state = {}) {
+  const date = state.date || (viewDay || selected || todayIso);
+  composer = { id: state.id || "new", kind: state.kind || "idea", original: state.text || "" };
+  $("cDate").value = date;
+  $("cTime").value = state.time || (date === todayIso ? nowHHMM() : "21:00");
+  $("cText").value = plainText(state.text || "");
+  setKind(composer.kind);
+  const isNew = composer.id === "new";
+  $("micBtn").hidden = !isNew; $("cHint").hidden = !isNew; $("recBox").hidden = true;
+  $("cSave").textContent = isNew ? "저장" : "수정 저장";
+  $("cSave").disabled = $("cCancel").disabled = false;
+  $("composer").hidden = false; document.body.classList.add("sheet-open");
+  history.pushState({ composer: true }, "");            // the back button closes the sheet
+  heal.reset();
+}
+
+function setKind(kind) {
+  composer.kind = kind;
+  for (const b of $("kindSeg").children) b.classList.toggle("on", b.dataset.kind === kind);
+}
+
+// fromBack: the back button already removed the sheet's history entry
+function closeComposer(fromBack) {
+  if (!composer) return;
+  if (recorder) stopRecording(false);
+  composer = null;
+  $("composer").hidden = true; document.body.classList.remove("sheet-open");
+  if (!fromBack) history.back();
+}
+
+const composerDirty = () => composer && ($("cText").value.trim() !== plainText(composer.original).trim() || recorder);
+
+function cancelComposer() {
+  if (composerDirty() && !confirm("작성 중인 내용을 버릴까요?")) return;
+  closeComposer(false);
+}
+
+async function saveComposer() {
+  const text = $("cText").value.trim(), date = $("cDate").value, hhmm = $("cTime").value || nowHHMM();
+  if (!text) { toast("내용을 입력하거나 🎤 로 말해 주세요"); return; }
+  if (!date) { toast("날짜를 골라 주세요"); return; }
+  const c = composer, key = date.slice(0, 7), time = isoWithOffset(date, hhmm);
+  $("cSave").disabled = $("cCancel").disabled = true; $("cSave").textContent = "저장 중…";
+  try {
+    if (c.id === "new") {
+      await updateMonth(key, list => list.push({ id: "w" + Date.now(), time, text, kind: c.kind, source: "app" }),
+                        `diary: add ${c.kind} from app`);
+    } else {
+      // the month can change when the date is edited: remove from the old month, then add to the new one
+      const oldKey = Object.keys(cache.entries).find(k => cache.entries[k].some(x => String(x.id) === String(c.id))) || key;
+      let moved = null;
+      await updateMonth(oldKey, list => {
+        const i = list.findIndex(x => String(x.id) === String(c.id));
+        if (i < 0) throw new Error("이미 삭제된 기록이에요.");
+        const e = list[i];
+        e.text = e.voice && !text.startsWith("🎙") ? `🎙 ${text}` : text;
+        e.time = time; e.kind = c.kind; e.edited = isoWithOffset(todayIso, nowHHMM());
+        if (oldKey !== key) moved = list.splice(i, 1)[0];
+      }, "diary: edit entry from app");
+      if (moved) await updateMonth(key, list => list.push(moved), "diary: move entry from app");
+    }
+    toast(c.kind === "idea" ? "💡 아이디어를 저장했어요" : "📖 일기를 저장했어요");
+    closeComposer(false);
+    selected = date;
+  } catch (e) {
+    toast(e.message);
+    $("cSave").disabled = $("cCancel").disabled = false; $("cSave").textContent = c.id === "new" ? "저장" : "수정 저장";
+  }
+  render();
+}
+
+// Safety net for Android keyboards: keys arrive but no text does → reconnect the keyboard.
+const heal = (() => {
+  let typed = 0, healed = false;
+  const ta = () => $("cText");
+  return {
+    reset() { typed = 0; healed = false; },
+    input() { typed = 0; },
+    key(e) {
+      if (healed || e.key === "Backspace" || e.key === "Enter" || e.key === "Tab") return;
+      typed++;
+      setTimeout(() => {
+        if (typed >= 2 && !healed && document.activeElement === ta()) {
+          healed = true;
+          const pos = ta().selectionStart;
+          ta().blur();
+          setTimeout(() => { ta().focus(); ta().setSelectionRange(pos, pos); }, 60);
+        }
+      }, 500);
+    },
+  };
+})();
+
+// ---------- voice: record 16 kHz mono WAV, hand it to the diary server to keep and transcribe ----------
+const MAX_REC_SECONDS = 600;
+let recorder = null;
+
+async function startRecording() {
+  if (!navigator.mediaDevices?.getUserMedia) { toast("이 기기에서는 녹음을 쓸 수 없어요"); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) {
+    toast("마이크 권한이 필요해요. 휴대폰 설정 → 앱 → 일기장 → 권한에서 마이크를 허용해 주세요.");
+    return;
+  }
+  let ctx;
+  try { ctx = new AudioContext({ sampleRate: 16000 }); } catch { ctx = new AudioContext(); }
+  const source = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const chunks = [];
+  proc.onaudioprocess = ev => {
+    const data = ev.inputBuffer.getChannelData(0);
+    chunks.push(new Float32Array(data));
+    let peak = 0; for (let i = 0; i < data.length; i += 64) peak = Math.max(peak, Math.abs(data[i]));
+    $("recLevel").style.width = `${Math.min(90, peak * 180)}px`;
+  };
+  source.connect(proc); proc.connect(ctx.destination);
+  const started = Date.now();
+  const timer = setInterval(() => {
+    const s = Math.floor((Date.now() - started) / 1000);
+    $("recClock").textContent = `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
+    if (s >= MAX_REC_SECONDS) stopRecording(true);
+  }, 250);
+  recorder = { stream, ctx, proc, source, chunks, timer, rate: ctx.sampleRate };
+  $("micBtn").hidden = true; $("recBox").hidden = false; $("recClock").textContent = "00:00";
+  $("cSave").disabled = true;
+}
+
+function stopRecording(keep) {
+  const r = recorder; if (!r) return null;
+  recorder = null;
+  clearInterval(r.timer);
+  try { r.source.disconnect(); r.proc.disconnect(); } catch {}
+  r.stream.getTracks().forEach(t => t.stop());
+  r.ctx.close().catch(() => {});
+  $("recBox").hidden = true; $("micBtn").hidden = false; $("cSave").disabled = false;
+  return keep ? toWav(r.chunks, r.rate) : null;
+}
+
+// Float32 chunks → 16 kHz 16-bit mono WAV (resampled if the device ignored the requested rate)
+function toWav(chunks, rate) {
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const ratio = rate / 16000, len = Math.floor(total / ratio);
+  const pcm = new Int16Array(len);
+  let ci = 0, offset = 0;
+  for (let i = 0; i < len; i++) {
+    let pos = Math.floor(i * ratio) - offset;
+    while (ci < chunks.length && pos >= chunks[ci].length) { offset += chunks[ci].length; pos -= chunks[ci].length; ci++; }
+    const v = ci < chunks.length ? chunks[ci][pos] : 0;
+    pcm[i] = Math.max(-1, Math.min(1, v)) * 0x7fff;
+  }
+  const buf = new ArrayBuffer(44 + pcm.byteLength), dv = new DataView(buf);
+  const str = (o, s) => [...s].forEach((ch, i) => dv.setUint8(o + i, ch.charCodeAt(0)));
+  str(0, "RIFF"); dv.setUint32(4, 36 + pcm.byteLength, true); str(8, "WAVE"); str(12, "fmt ");
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, 16000, true);
+  dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); str(36, "data");
+  dv.setUint32(40, pcm.byteLength, true);
+  new Int16Array(buf, 44).set(pcm);
+  return { blob: new Blob([buf], { type: "audio/wav" }), seconds: len / 16000 };
+}
+
+async function finishRecording() {
+  const wav = stopRecording(true);
+  if (!wav || wav.seconds < 0.7) { toast("녹음이 너무 짧아요"); return; }
+  const c = composer, date = $("cDate").value || todayIso, time = isoWithOffset(date, $("cTime").value || nowHHMM());
+  const caption = $("cText").value.trim();
+  $("cSave").disabled = $("cCancel").disabled = true; $("micBtn").disabled = true; $("micBtn").textContent = "⏫ 보내는 중…";
+  try {
+    const qs = new URLSearchParams({ kind: c.kind, time });
+    if (caption) qs.set("caption", caption);
+    await workerApi(`/api/voice?${qs}`, { body: wav.blob, headers: { "Content-Type": "audio/wav" } });
+    toast("🎙 받았어요. 잠시 뒤 글로 바뀌어요");
+    closeComposer(false);
+    selected = date;
+    await loadMonth(date.slice(0, 7), true).catch(() => {});
+    render(); watchPending();
+  } catch (e) {
+    toast(e.message);
+    $("cSave").disabled = $("cCancel").disabled = false;
+  } finally { $("micBtn").disabled = false; $("micBtn").textContent = "🎤 말로 기록하기"; }
+}
+
+// Re-read while recordings are still being turned into text.
+let watching = false;
+async function watchPending() {
+  if (watching) return;
+  watching = true;
+  try {
+    for (let i = 0; i < 60; i++) {
+      const months = Object.keys(cache.entries).filter(k => cache.entries[k].some(e => e.pending && !failed(e)));
+      if (!months.length) break;
+      await new Promise(r => setTimeout(r, 5000));
+      for (const k of months) await loadMonth(k, true).catch(() => {});
+      render();
+    }
+  } finally { watching = false; }
+}
+
+async function retryVoice(e) {
+  try {
+    await workerApi(`/api/retry?id=${encodeURIComponent(e.id)}&month=${e.time.slice(0, 7)}`);
+    toast("다시 받아쓰는 중이에요");
+    await loadMonth(e.time.slice(0, 7), true);
+    render(); watchPending();
+  } catch (err) { toast(err.message); }
+}
+
+// ---------- the diary server (Cloudflare Worker; address saved in diary/config.json) ----------
 let workerUrl = null;
 async function getWorkerUrl() {
   if (workerUrl) return workerUrl;
@@ -683,10 +942,11 @@ async function getWorkerUrl() {
   workerUrl = cfgText ? JSON.parse(cfgText).worker_url : null;
   return workerUrl;
 }
-async function workerApi(path) {
+async function workerApi(path, opts = {}) {
   const base = await getWorkerUrl();
   if (!base) throw new Error("일기 서버(Cloudflare Worker) 주소를 몰라요. Worker 주소를 브라우저로 한 번 열어 주세요.");
-  const res = await fetch(base + path, { method: "POST", headers: { Authorization: `Bearer ${cfg.token}` } });
+  const res = await fetch(base + path, { method: "POST", body: opts.body,
+    headers: { Authorization: `Bearer ${cfg.token}`, ...(opts.headers || {}) } });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.ok) throw new Error(body.error || `일기 서버 오류 (${res.status})`);
   return body;
@@ -704,13 +964,13 @@ async function analyze() {
   try {
     const { text } = await workerApi(`/api/analyze?month=${key}`);
     cache.analysis[key] = text.trim() + "\n";
-    status.textContent = "완료! 텔레그램으로도 보냈어요.";
+    status.textContent = "완료!";
   } catch (e) {
     $("analysisError").textContent = e.message; status.textContent = "";
   } finally { clearInterval(timer); analyzing = false; render(); }
 }
 
-// App opened: let the Worker finish leftover jobs (voice transcriptions that failed, last month's analysis).
+// App opened: let the server finish leftover jobs (voice transcriptions, last month's analysis).
 let openPinged = false;
 function pingWorker() {
   if (openPinged) return;
@@ -726,7 +986,7 @@ async function checkForUpdate() {
   try {
     const res = await fetch(`${location.pathname}?v=${Date.now()}`, { cache: "no-store" });
     const live = (await res.text()).match(/APP_VERSION = "([^"]+)"/);
-    if (live && live[1] !== APP_VERSION && !editing) location.reload();
+    if (live && live[1] !== APP_VERSION && !composer) location.reload();
   } catch {}
 }
 
@@ -748,7 +1008,7 @@ async function connect() {
 function start() {
   checkForUpdate();
   pingWorker();
-  $("setup").hidden = true; $("app").hidden = false;
+  $("setup").hidden = true; $("app").hidden = false; $("fab").hidden = false;
   show().then(() => { if (location.hash) showDayFromHash(); });
 }
 
@@ -765,7 +1025,8 @@ $("connect").onclick = connect;
 $("prev").onclick = () => move(-1);
 $("next").onclick = () => move(1);
 $("todayBtn").onclick = goToday;
-$("tabDay").onclick = () => { if (tab === "day") openDay(selected, true); else { tab = "day"; render(); } };
+$("tabDay").onclick = () => { tab = "day"; render(); };
+$("tabIdeas").onclick = () => { tab = "idea"; render(); };
 $("tabAnalysis").onclick = () => { tab = "analysis"; render(); };
 $("analyzeBtn").onclick = analyze;
 $("refresh").onclick = refresh;
@@ -777,12 +1038,30 @@ $("menuLogout").onclick = () => { closeMenu(); logout(); };
 document.addEventListener("click", ev => { if (!ev.target.closest("#menu")) closeMenu(); });
 $("verInfo").textContent = `버전 ${APP_VERSION}`;
 $("backBtn").onclick = () => { if (history.length > 1 && location.hash) history.back(); else location.hash = ""; };
-$("dayAdd").onclick = () => openEditor({ id: "new", date: viewDay, time: viewDay === todayIso ? nowHHMM() : "21:00", text: "" });
+$("dayAdd").onclick = () => openComposer({ date: viewDay });
 $("datePick").onchange = () => { const v = $("datePick").value; if (v) location.replace(`#day=${v}`); };
+$("fab").onclick = () => openComposer({ date: viewDay || todayIso });
+for (const b of $("kindSeg").children) b.onclick = () => setKind(b.dataset.kind);
+$("cCancel").onclick = cancelComposer;
+$("cSave").onclick = saveComposer;
+$("micBtn").onclick = startRecording;
+$("recStop").onclick = finishRecording;
+$("recCancel").onclick = () => stopRecording(false);
+$("composer").onclick = ev => { if (ev.target === $("composer")) cancelComposer(); };
+$("cText").addEventListener("input", heal.input);
+$("cText").addEventListener("compositionupdate", heal.input);
+$("cText").addEventListener("keydown", heal.key);
+
+// Back button: closes the sheet first, then the day screen (hash), then the app asks to quit.
+window.addEventListener("popstate", () => {
+  if (!composer) return;
+  if (composerDirty() && !confirm("작성 중인 내용을 버릴까요?")) { history.pushState({ composer: true }, ""); return; }
+  closeComposer(true);
+});
 window.addEventListener("hashchange", showDayFromHash);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) checkForUpdate();
-  if (!document.hidden && cfg.token && !$("app").hidden) show(true);
+  if (!document.hidden && cfg.token && !$("app").hidden && !composer) show(true);
 });
 
 // swipe left/right on the calendar to change month

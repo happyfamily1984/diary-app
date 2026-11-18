@@ -10,15 +10,28 @@ android {
         applicationId "io.github.happyfamily1984.diary"
         minSdk 24
         targetSdk 35
-        versionCode 3
-        versionName "1.2"
+        versionCode 4
+        versionName "2.0"
+    }
+
+    // 고정 서명 키가 있으면(빌드 환경 변수로 전달) 그 키로, 없으면 디버그 키로 서명합니다.
+    // 같은 키로 서명해야 앱을 지우지 않고 덮어쓰기로 업데이트할 수 있습니다.
+    def ks = System.getenv("APK_KEYSTORE_FILE")
+    signingConfigs {
+        fixed {
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("APK_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("APK_KEY_ALIAS") ?: "diary"
+                keyPassword System.getenv("APK_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            // 개인 설치용: 디버그 키로 서명 (스토어 배포 아님)
-            signingConfig signingConfigs.debug
+            signingConfig ks ? signingConfigs.fixed : signingConfigs.debug
         }
     }
 
