@@ -413,11 +413,13 @@
     <div class="preview" id="fPreview"></div>
     <div class="row2"><label>크기</label><span class="sizes" id="fSizes"><button data-v="30">30</button><button data-v="40">40</button><button data-v="50">50</button><button data-v="60">60</button></span></div>
     <div class="row2"><label for="fAlpha">투명도</label><input type="range" id="fAlpha" min="20" max="100" step="5"><span class="val" id="fAlphaV"></span></div>
-    <div class="row2"><label for="fGap">간격</label><input type="range" id="fGap" min="0" max="40" step="1"><span class="val" id="fGapV"></span></div>
-    <div class="row2"><label>배치</label><span class="lay" id="fLay"><button data-v="column">세로</button><button data-v="row">가로</button></span></div>
+    <div class="row2"><label>두 버튼</label><span class="lay" id="fMode"><button data-v="together">붙어있기</button><button data-v="apart">떨어지기</button></span></div>
+    <div class="row2" id="fGapRow"><label for="fGap">간격</label><input type="range" id="fGap" min="0" max="120" step="2"><span class="val" id="fGapV"></span></div>
+    <div class="row2" id="fLayRow"><label>배치</label><span class="lay" id="fLay"><button data-v="column">세로</button><button data-v="row">가로</button></span></div>
     <div class="row2"><label for="fSnap">화면 가장자리에 붙이기</label><button class="switch" id="fSnap" aria-label="가장자리에 붙이기"></button></div>
     <div class="note">📖 누르면 일기, 💡 누르면 아이디어 녹음이 시작돼요(빨간색). 한 번 더 누르면 끝나고 파란색으로 바뀌며 전송돼요.
-      녹음하는 동안 유튜브·음악은 잠시 멈춰요.<br>버튼을 <b>끌어서</b> 다른 앱의 떠 있는 아이콘 옆, 원하는 높이에 놓으세요.
+      녹음하는 동안 유튜브·음악은 잠시 멈춰요.<br><b>길게 누르면</b> 📖는 최근 일기, 💡는 아이디어 목록으로 앱이 열려요.<br>
+      버튼을 <b>끌어서</b> 다른 앱의 떠 있는 아이콘 옆, 원하는 높이에 놓으세요. "떨어지기"면 두 버튼을 각각 따로 옮길 수 있어요.
       안드로이드는 다른 앱 아이콘의 위치를 알려 주지 않아서 자동으로 피하지는 못해요.</div>
     <div class="row"><button class="btn-pink" id="fClose">닫기</button></div>
   </div>
@@ -426,7 +428,7 @@
 <div class="toast" id="toast" hidden></div>
 <script>
 // Bump on every change: open apps compare this with the published page and reload themselves.
-const APP_VERSION = "2026-11-18.2";
+const APP_VERSION = "2026-11-18.3";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
 const KIND = { idea: "아이디어", diary: "일기" };
@@ -682,7 +684,27 @@ function openDay(iso) {
   else showDayFromHash();
 }
 
+// Long-pressing a floating button opens the app with #open=diary (latest diary entry) or #open=idea (ideas list).
+async function openFromButton(kind) {
+  history.replaceState(null, "", location.pathname);
+  if (composer) closeComposer(true);
+  y = now.getFullYear(); m = now.getMonth() + 1;
+  const months = [monthKey(), m > 1 ? `${y}-${pad(m - 1)}` : `${y - 1}-12`];
+  let latest = null;
+  for (const k of months) {
+    try { await loadMonth(k, true); } catch {}
+    const list = (cache.entries[k] || []).filter(e => kindOf(e) === kind);
+    if (list.length) { latest = list[list.length - 1]; break; }
+  }
+  viewDay = null; $("dayView").hidden = true; $("app").hidden = false;
+  if (kind === "idea") { tab = "idea"; render(); window.scrollTo(0, $("ideasCard").offsetTop - 80); return; }
+  if (!latest) { tab = "day"; selected = todayIso; render(); toast("아직 일기가 없어요"); return; }
+  location.hash = `day=${latest.time.slice(0, 10)}`;        // pushed on top of home, so back returns home
+}
+
 async function showDayFromHash() {
+  const op = location.hash.match(/^#open=(diary|idea)$/);
+  if (op) return openFromButton(op[1]);
   const mt = location.hash.match(/^#day=(\d{4}-\d{2}-\d{2})$/);
   viewDay = mt ? mt[1] : null;
   $("dayView").hidden = !viewDay; $("app").hidden = !!viewDay;
@@ -1030,16 +1052,19 @@ function renderFloating() {
     : !f.overlay ? "켜면 '다른 앱 위에 표시' 권한을 허용하는 화면이 열려요" : "꺼져 있어요";
   for (const b of $("fSizes").children) b.classList.toggle("on", +b.dataset.v === f.size);
   for (const b of $("fLay").children) b.classList.toggle("on", b.dataset.v === f.layout);
+  const apart = f.mode === "apart";
+  for (const b of $("fMode").children) b.classList.toggle("on", b.dataset.v === (apart ? "apart" : "together"));
+  $("fGapRow").hidden = $("fLayRow").hidden = apart;
   $("fAlpha").value = f.alpha; $("fAlphaV").textContent = `${f.alpha}%`;
   $("fGap").value = f.gap; $("fGapV").textContent = f.gap === 0 ? "딱 붙게" : `${f.gap}`;
   $("fSnap").classList.toggle("on", f.snap !== false);
   // preview of the two buttons at the chosen size / gap / opacity
-  const pv = $("fPreview"); pv.replaceChildren(); pv.style.flexDirection = f.layout === "row" ? "row" : "column";
+  const pv = $("fPreview"); pv.replaceChildren(); pv.style.flexDirection = apart || f.layout === "row" ? "row" : "column";
   pv.style.opacity = f.alpha / 100;
   [["📖", "#ec4b84"], ["💡", "#f59f00"]].forEach(([emo, color], i) => {
     const b = el("i", null, emo);
     Object.assign(b.style, { width: `${f.size}px`, height: `${f.size}px`, background: color, fontSize: `${f.size * 0.45}px`,
-                             [f.layout === "row" ? "marginLeft" : "marginTop"]: i ? `${f.gap}px` : "0" });
+                             [apart || f.layout === "row" ? "marginLeft" : "marginTop"]: i ? `${apart ? 70 : f.gap}px` : "0" });
     pv.append(b);
   });
 }
@@ -1131,6 +1156,7 @@ $("menuFloating").onclick = () => { closeMenu(); openFloating(); };
 $("fOn").onclick = () => { native.enableFloating(!fState.enabled); if (fState.enabled) { fState.enabled = false; renderFloating(); } };
 for (const b of $("fSizes").children) b.onclick = () => setFloating({ size: +b.dataset.v });
 for (const b of $("fLay").children) b.onclick = () => setFloating({ layout: b.dataset.v });
+for (const b of $("fMode").children) b.onclick = () => setFloating({ mode: b.dataset.v });
 $("fAlpha").oninput = () => setFloating({ alpha: +$("fAlpha").value });
 $("fGap").oninput = () => setFloating({ gap: +$("fGap").value });
 $("fSnap").onclick = () => setFloating({ snap: fState.snap === false });

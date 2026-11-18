@@ -32,7 +32,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -54,6 +53,8 @@ import java.util.Locale;
 /**
  * Two floating buttons shown over every app: 📖 records a diary entry, 💡 an idea.
  * Tap once to start recording (red), tap again to stop (blue while it is sent to the diary server).
+ * Long-press opens the app on the latest diary entry / the ideas list. Drag to move: in "together"
+ * mode the two buttons move as a pair (with an adjustable gap), in "apart" mode each one on its own.
  * Other players are paused during recording (audio focus), and recording keeps going whatever app
  * is on screen, because this is a foreground service started while the diary app was open.
  */
@@ -69,9 +70,10 @@ public class FloatingService extends Service {
     private static final int PINK = 0xFFEC4B84, AMBER = 0xFFF59F00, RED = 0xFFE03131, BLUE = 0xFF3B82F6;
 
     private WindowManager wm;
-    private LinearLayout group;
-    private WindowManager.LayoutParams lp;
-    private TextView diaryBtn, ideaBtn;
+    // two separate overlay windows: [0] 📖 diary, [1] 💡 idea
+    private final TextView[] btn = new TextView[2];
+    private final WindowManager.LayoutParams[] lp = new WindowManager.LayoutParams[2];
+    private static final String[] KIND = { "diary", "idea" };
     private final Handler main = new Handler(Looper.getMainLooper());
 
     // recording state
@@ -104,7 +106,7 @@ public class FloatingService extends Service {
         }
         startAsForeground();
         if (!canRun(this)) { stopSelf(); return START_NOT_STICKY; }
-        if (group == null) createButtons(); else applySettings();
+        if (btn[0] == null) createButtons(); else applySettings();
         sendLeftovers();
         return START_STICKY;
     }
@@ -112,7 +114,9 @@ public class FloatingService extends Service {
     @Override
     public void onDestroy() {
         recording = false;
-        if (group != null) { try { wm.removeView(group); } catch (Exception ignored) { } group = null; }
+        for (int i = 0; i < 2; i++) {
+            if (btn[i] != null) { try { wm.removeView(btn[i]); } catch (Exception ignored) { } btn[i] = null; }
+        }
         super.onDestroy();
     }
 
@@ -165,93 +169,144 @@ public class FloatingService extends Service {
     }
 
     private void refreshColors() {
-        if (group == null) return;
-        paint(diaryBtn, "diary".equals(recordingKind) ? (recording ? RED : BLUE) : PINK);
-        paint(ideaBtn, "idea".equals(recordingKind) ? (recording ? RED : BLUE) : AMBER);
+        if (btn[0] == null) return;
+        paint(btn[0], "diary".equals(recordingKind) ? (recording ? RED : BLUE) : PINK);
+        paint(btn[1], "idea".equals(recordingKind) ? (recording ? RED : BLUE) : AMBER);
     }
+
+    private boolean together() { return !"apart".equals(prefs().getString("mode", "together")); }
 
     @SuppressLint("ClickableViewAccessibility")
     private void createButtons() {
-        group = new LinearLayout(this);
-        diaryBtn = makeButton("📖");
-        ideaBtn = makeButton("💡");
-        group.addView(diaryBtn);
-        group.addView(ideaBtn);
+        DisplayMetrics m = getResources().getDisplayMetrics();
+        for (int i = 0; i < 2; i++) {
+            btn[i] = makeButton(i == 0 ? "📖" : "💡");
+            WindowManager.LayoutParams l = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    PixelFormat.TRANSLUCENT);
+            l.gravity = Gravity.TOP | Gravity.START;
+            // old single position ("x","y") becomes the first button's
+            l.x = prefs().getInt("x" + i, prefs().getInt("x", m.widthPixels - dp(70)));
+            l.y = prefs().getInt("y" + i, prefs().getInt("y", m.heightPixels / 2) + (i == 1 ? dp(140) : 0));
+            lp[i] = l;
+            btn[i].setOnTouchListener(new ButtonTouch(i));
+        }
+        applySettings();
+        for (int i = 0; i < 2; i++) wm.addView(btn[i], lp[i]);
+    }
 
-        lp = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.TOP | Gravity.START;
-
-        View.OnTouchListener drag = new View.OnTouchListener() {
-            float downX, downY; int startX, startY; boolean moved; final int slop = ViewConfiguration.get(FloatingService.this).getScaledTouchSlop();
-            @Override public boolean onTouch(View v, MotionEvent e) {
-                switch (e.getActionMasked()) {
-                    case MotionEvent.ACTION_DOWN:
-                        downX = e.getRawX(); downY = e.getRawY(); startX = lp.x; startY = lp.y; moved = false;
-                        return true;
-                    case MotionEvent.ACTION_MOVE:
-                        float dx = e.getRawX() - downX, dy = e.getRawY() - downY;
-                        if (!moved && Math.hypot(dx, dy) > slop) moved = true;
-                        if (moved) { lp.x = startX + Math.round(dx); lp.y = startY + Math.round(dy); keepOnScreen(); wm.updateViewLayout(group, lp); }
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                        if (moved) { snapToEdge(); savePosition(); }
-                        else onTap(v == diaryBtn ? "diary" : "idea");
-                        return true;
-                }
-                return false;
+    /** Tap = record, hold still = open the app, move = drag (the pair together, or one button alone). */
+    private class ButtonTouch implements View.OnTouchListener {
+        final int i;
+        final int slop = ViewConfiguration.get(FloatingService.this).getScaledTouchSlop();
+        float downX, downY; int startX, startY; boolean moved, longPressed;
+        final Runnable longPress = new Runnable() {
+            @Override public void run() {
+                if (moved) return;
+                longPressed = true;
+                btn[i].performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                openApp(KIND[i]);
             }
         };
-        diaryBtn.setOnTouchListener(drag);
-        ideaBtn.setOnTouchListener(drag);
+        ButtonTouch(int i) { this.i = i; }
 
-        DisplayMetrics m = getResources().getDisplayMetrics();
-        lp.x = prefs().getInt("x", m.widthPixels - dp(70));
-        lp.y = prefs().getInt("y", m.heightPixels / 2);
-        applySettings();
-        wm.addView(group, lp);
+        @Override public boolean onTouch(View v, MotionEvent e) {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX = e.getRawX(); downY = e.getRawY(); startX = lp[i].x; startY = lp[i].y;
+                    moved = false; longPressed = false;
+                    main.postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (longPressed) return true;
+                    float dx = e.getRawX() - downX, dy = e.getRawY() - downY;
+                    if (!moved && Math.hypot(dx, dy) > slop) { moved = true; main.removeCallbacks(longPress); }
+                    if (moved) moveTo(i, startX + Math.round(dx), startY + Math.round(dy));
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    main.removeCallbacks(longPress);
+                    if (longPressed) return true;
+                    if (moved) { snapToEdge(i); savePositions(); }
+                    else if (e.getActionMasked() == MotionEvent.ACTION_UP) onTap(KIND[i]);
+                    return true;
+            }
+            return false;
+        }
     }
 
-    /** Size (dp), opacity, gap between the two buttons and row/column layout from the app's settings. */
+    /** Opens the diary app on the latest diary entry (📖) or the ideas list (💡). */
+    private void openApp(String kind) {
+        Intent i = new Intent(this, MainActivity.class)
+                .putExtra("open", kind)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        try { startActivity(i); } catch (Exception e) { toast("앱을 열 수 없어요"); }
+    }
+
+    private int sizePx() { return dp(prefs().getInt("size", 50)); }
+
+    /** Where the 💡 button sits relative to 📖 in "together" mode. */
+    private int[] partnerOffset() {
+        int step = sizePx() + dp(prefs().getInt("gap", 8));
+        return "row".equals(prefs().getString("layout", "column")) ? new int[] { step, 0 } : new int[] { 0, step };
+    }
+
+    /** Moves button i (and, in "together" mode, its partner with it). */
+    private void moveTo(int i, int x, int y) {
+        DisplayMetrics m = getResources().getDisplayMetrics();
+        int s = sizePx();
+        if (together()) {
+            int[] off = partnerOffset();
+            int ax = i == 0 ? x : x - off[0], ay = i == 0 ? y : y - off[1];   // position of 📖 (the anchor)
+            ax = Math.max(0, Math.min(ax, m.widthPixels - s - off[0]));
+            ay = Math.max(0, Math.min(ay, m.heightPixels - s - off[1]));
+            lp[0].x = ax; lp[0].y = ay; lp[1].x = ax + off[0]; lp[1].y = ay + off[1];
+            update(0); update(1);
+        } else {
+            lp[i].x = Math.max(0, Math.min(x, m.widthPixels - s));
+            lp[i].y = Math.max(0, Math.min(y, m.heightPixels - s));
+            update(i);
+        }
+    }
+
+    private void update(int i) { try { wm.updateViewLayout(btn[i], lp[i]); } catch (Exception ignored) { } }
+
+    /** Size (dp), opacity, together/apart, gap and row/column from the app's settings. */
     void applySettings() {
-        if (group == null) return;
+        if (btn[0] == null) return;
         SharedPreferences p = prefs();
-        int size = dp(p.getInt("size", 50));
-        int gap = dp(p.getInt("gap", 8));
-        boolean row = "row".equals(p.getString("layout", "column"));
-        group.setOrientation(row ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        group.setAlpha(Math.max(0.2f, Math.min(1f, p.getInt("alpha", 90) / 100f)));
+        int size = sizePx();
+        float alpha = Math.max(0.2f, Math.min(1f, p.getInt("alpha", 90) / 100f));
         for (int i = 0; i < 2; i++) {
-            TextView b = i == 0 ? diaryBtn : ideaBtn;
-            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(size, size);
-            if (i == 1) { if (row) l.leftMargin = gap; else l.topMargin = gap; }
-            b.setLayoutParams(l);
-            b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, size * 0.45f);
+            lp[i].width = size; lp[i].height = size;
+            btn[i].setAlpha(alpha);
+            btn[i].setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, size * 0.45f);
         }
         refreshColors();
-        group.post(() -> { keepOnScreen(); try { wm.updateViewLayout(group, lp); } catch (Exception ignored) { } });
+        moveTo(0, lp[0].x, lp[0].y);                     // re-places the partner for the new gap/layout
+        if (!together()) moveTo(1, lp[1].x, lp[1].y);
+        savePositions();
     }
 
-    private void keepOnScreen() {
-        DisplayMetrics m = getResources().getDisplayMetrics();
-        int w = group.getWidth() > 0 ? group.getWidth() : dp(60), h = group.getHeight() > 0 ? group.getHeight() : dp(120);
-        lp.x = Math.max(0, Math.min(lp.x, m.widthPixels - w));
-        lp.y = Math.max(0, Math.min(lp.y, m.heightPixels - h));
-    }
-
-    /** After a drag the buttons stick to the nearer side of the screen, at the height they were dropped. */
-    private void snapToEdge() {
+    /** After a drag the button(s) stick to the nearer side of the screen, at the height they were dropped. */
+    private void snapToEdge(int i) {
         if (!prefs().getBoolean("snap", true)) return;
         DisplayMetrics m = getResources().getDisplayMetrics();
-        int w = group.getWidth();
-        lp.x = lp.x + w / 2 < m.widthPixels / 2 ? 0 : m.widthPixels - w;
-        wm.updateViewLayout(group, lp);
+        int s = sizePx();
+        if (together()) {
+            int[] off = partnerOffset();
+            int w = s + off[0];
+            moveTo(0, lp[0].x + w / 2 < m.widthPixels / 2 ? 0 : m.widthPixels - w, lp[0].y);
+        } else {
+            moveTo(i, lp[i].x + s / 2 < m.widthPixels / 2 ? 0 : m.widthPixels - s, lp[i].y);
+        }
     }
 
-    private void savePosition() { prefs().edit().putInt("x", lp.x).putInt("y", lp.y).apply(); }
+    private void savePositions() {
+        prefs().edit().putInt("x0", lp[0].x).putInt("y0", lp[0].y).putInt("x1", lp[1].x).putInt("y1", lp[1].y).apply();
+    }
 
     // ---------------------------------------------------------------- recording
 

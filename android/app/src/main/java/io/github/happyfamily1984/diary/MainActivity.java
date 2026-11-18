@@ -93,8 +93,9 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         applySystemBars();
         setContentView(root);
-        if (savedInstanceState != null) webView.restoreState(savedInstanceState);
-        else webView.loadUrl(appUrl);
+        String open = getIntent().getStringExtra("open");
+        if (savedInstanceState != null && open == null) webView.restoreState(savedInstanceState);
+        else webView.loadUrl(open != null ? appUrl + "#open=" + open : appUrl);
     }
 
     private void applySystemBars() {
@@ -172,6 +173,7 @@ public class MainActivity extends Activity {
                         .put("size", p.getInt("size", 50)).put("alpha", p.getInt("alpha", 90))
                         .put("gap", p.getInt("gap", 8)).put("layout", p.getString("layout", "column"))
                         .put("snap", p.getBoolean("snap", true))
+                        .put("mode", p.getString("mode", "together"))
                         .put("overlay", Settings.canDrawOverlays(MainActivity.this))
                         .put("mic", checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
                         .toString();
@@ -185,9 +187,10 @@ public class MainActivity extends Activity {
                 SharedPreferences.Editor e = floatPrefs().edit();
                 if (o.has("size")) e.putInt("size", Math.max(24, Math.min(80, o.getInt("size"))));
                 if (o.has("alpha")) e.putInt("alpha", Math.max(20, Math.min(100, o.getInt("alpha"))));
-                if (o.has("gap")) e.putInt("gap", Math.max(0, Math.min(40, o.getInt("gap"))));
+                if (o.has("gap")) e.putInt("gap", Math.max(0, Math.min(120, o.getInt("gap"))));
                 if (o.has("layout")) e.putString("layout", "row".equals(o.getString("layout")) ? "row" : "column");
                 if (o.has("snap")) e.putBoolean("snap", o.getBoolean("snap"));
+                if (o.has("mode")) e.putString("mode", "apart".equals(o.getString("mode")) ? "apart" : "together");
                 e.apply();
                 if (floatPrefs().getBoolean("enabled", false) && FloatingService.canRun(MainActivity.this))
                     runOnUiThread(() -> startFloating(FloatingService.ACTION_APPLY));
@@ -239,6 +242,15 @@ public class MainActivity extends Activity {
                 .setPositiveButton("예", (d, w) -> finish())
                 .setNegativeButton("아니오", null)
                 .show();
+    }
+
+    /** A floating button was long-pressed while the app was already open. */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        String open = intent.getStringExtra("open");
+        if (open != null && open.matches("diary|idea"))
+            webView.evaluateJavascript("location.hash='open=" + open + "'", null);
     }
 
     @Override
