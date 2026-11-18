@@ -14,7 +14,7 @@
 // 선택: GEMINI_MODEL, DIARY_TIMEZONE (기본 Asia/Seoul)
 // 예전 텔레그램 연동이 남아 있으면 Worker 주소를 열 때 끊습니다 (TELEGRAM_BOT_TOKEN 이 있을 때).
 
-const VERSION = "2026-11-18.2";
+const VERSION = "2026-11-19.1";
 const MAX_SUBREQUESTS = 40;          // free plan allows 50 per invocation; keep headroom
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const AUDIO_PART = 1024 * 1024;      // Durable Object storage values are limited to 2 MB
@@ -26,7 +26,7 @@ const RETRY_DELAYS = [3000, 8000];
 const TRANSIENT = new Set([429, 500, 502, 503, 504, 524]);   // 524: long audio timed out — retry, then the faster model
 
 const ANALYSIS_PROMPT = `너는 따뜻하고 통찰력 있는 기록 분석가야. 사용자가 한 달 동안 남긴 일기와 아이디어 메모를 읽고 한국어로 분석해 줘.
-각 기록 앞에는 (일기) 또는 (아이디어) 표시가 있어.
+각 기록 앞에는 (일기) 또는 (아이디어) 표시가 있고, 이미 이룬 아이디어에는 '실현됨'이 붙어 있어.
 
 아래 순서로, 각 항목은 이모지 제목 한 줄 + 짧은 문단이나 '- ' 목록으로 써.
 📌 한 달 요약 (3~4문장)
@@ -319,7 +319,7 @@ async function analyzeMonth(ctx, month) {
   if (people.length) lines.push("기록에 나오는 사람·단어: " + people.join(", "));
   lines.push("");
   for (const e of entries)
-    lines.push(`[${e.time.slice(0, 16).replace("T", " ")}] (${KINDS[kindOf(e)]})${e.from ? ` (${e.from})` : ""} ${e.text}`);
+    lines.push(`[${e.time.slice(0, 16).replace("T", " ")}] (${KINDS[kindOf(e)]}${e.done ? ", 실현됨" : ""})${e.from ? ` (${e.from})` : ""} ${e.text}`);
   const text = await withGeminiKeys(ctx, key => generate(ctx, ANALYSIS_PROMPT, [{ text: lines.join("\n") }], 0.7, key));
   const path = `diary/analysis/${month}.md`;
   const { sha } = await readWithSha(ctx, path);
@@ -354,6 +354,16 @@ async function transcribePending(ctx, audio) {
       }
       try {
         let text = await transcribe(ctx, rec.bytes, rec.mime);
+        if (/^🎙\s*\(내용 없음\)\s*$/.test(text) && !e.voice.caption) {
+          // nothing was said (a pocket tap, or another app held the mic): drop the entry instead of keeping it
+          await updateMonth(ctx, e.time.slice(0, 7), list => {
+            const i = list.findIndex(x => String(x.id) === String(e.id));
+            if (i < 0) return false;
+            list.splice(i, 1);
+          }, "diary: drop empty voice entry");
+          await audio.del(e.id);
+          continue;
+        }
         if (e.voice.caption) text += `\n${e.voice.caption}`;
         await upsert(ctx, e, { text, pending: undefined, attempts: undefined, pending_error: undefined },
                      "diary: transcribe voice entry");

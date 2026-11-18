@@ -67,7 +67,9 @@ public class FloatingService extends Service {
     private static final int RATE = 16000;
     private static final int MAX_SECONDS = 600;
 
-    private static final int PINK = 0xFFEC4B84, AMBER = 0xFFF59F00, RED = 0xFFE03131, BLUE = 0xFF3B82F6;
+    // idle colours are deliberately far from red, so "recording" (red) is never mistaken
+    private static final int PURPLE = 0xFF7C5CFF, AMBER = 0xFFF59F00, RED = 0xFFE03131, BLUE = 0xFF3B82F6;
+    private static final int SILENCE_PEAK = 1200;      // 16-bit peak below this for the whole take = nothing said
 
     private WindowManager wm;
     // two separate overlay windows: [0] 📖 diary, [1] 💡 idea
@@ -170,7 +172,7 @@ public class FloatingService extends Service {
 
     private void refreshColors() {
         if (btn[0] == null) return;
-        paint(btn[0], "diary".equals(recordingKind) ? (recording ? RED : BLUE) : PINK);
+        paint(btn[0], "diary".equals(recordingKind) ? (recording ? RED : BLUE) : PURPLE);
         paint(btn[1], "idea".equals(recordingKind) ? (recording ? RED : BLUE) : AMBER);
     }
 
@@ -337,6 +339,7 @@ public class FloatingService extends Service {
             return;
         }
         pauseOtherPlayers();
+        buzz();
         recording = true;
         recordingKind = kind;
         refreshColors();
@@ -346,14 +349,19 @@ public class FloatingService extends Service {
         recordThread = new Thread(() -> {
             ByteArrayOutputStream pcm = new ByteArrayOutputStream();
             byte[] buf = new byte[RATE / 5];
+            int peak = 0;
             rec.startRecording();
             while (recording && System.currentTimeMillis() - startedAt < MAX_SECONDS * 1000L) {
                 int n = rec.read(buf, 0, buf.length);
-                if (n > 0) pcm.write(buf, 0, n);
+                if (n > 0) {
+                    pcm.write(buf, 0, n);
+                    for (int k = 0; k + 1 < n; k += 2) peak = Math.max(peak, Math.abs((short) ((buf[k] & 0xff) | (buf[k + 1] << 8))));
+                }
             }
+            final boolean silent = peak < SILENCE_PEAK;
             try { rec.stop(); } catch (Exception ignored) { }
             rec.release();
-            main.post(() -> finished(kind, time, pcm.toByteArray()));
+            main.post(() -> finished(kind, time, pcm.toByteArray(), silent));
         }, "diary-recorder");
         recordThread.start();
         toast(("diary".equals(kind) ? "📖 일기" : "💡 아이디어") + " 녹음 시작 — 다시 누르면 끝나요");
@@ -361,12 +369,13 @@ public class FloatingService extends Service {
 
     private void stopRecording() { recording = false; }
 
-    private void finished(String kind, String time, byte[] pcm) {
+    private void finished(String kind, String time, byte[] pcm, boolean silent) {
         recording = false;
         releaseFocus();
-        if (pcm.length < RATE * 2 * 0.7) {             // under 0.7 s
+        buzz();
+        if (pcm.length < RATE * 2 * 0.7 || silent) {   // under 0.7 s, or no voice at all → not saved
             recordingKind = null; refreshColors(); startAsForeground();
-            toast("녹음이 너무 짧아요");
+            toast(silent ? "말소리가 들리지 않아 저장하지 않았어요 (다른 앱이 마이크를 쓰는 중일 수도 있어요)" : "녹음이 너무 짧아요");
             return;
         }
         sending = true;
@@ -388,6 +397,14 @@ public class FloatingService extends Service {
                          : "보내지 못했어요. 인터넷이 연결되면 다시 보낼게요");
             });
         }, "diary-upload").start();
+    }
+
+    /** A short vibration so starting and stopping a recording can be felt. */
+    private void buzz() {
+        try {
+            android.os.Vibrator v = getSystemService(android.os.Vibrator.class);
+            if (v != null) v.vibrate(android.os.VibrationEffect.createOneShot(40, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (Exception ignored) { }
     }
 
     // Other players (YouTube, YouTube Music, …) pause while we hold transient audio focus.

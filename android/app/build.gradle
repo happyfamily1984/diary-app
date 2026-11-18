@@ -10,8 +10,8 @@ android {
         applicationId "io.github.happyfamily1984.diary"
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName "2.2"
+        versionCode 7
+        versionName "2.3"
     }
 
     // 고정 서명 키가 있으면(빌드 환경 변수로 전달) 그 키로, 없으면 디버그 키로 서명합니다.

@@ -191,6 +191,30 @@
   .spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid #d9dbee; border-top-color: var(--pink); animation: spin .9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ---------- ideas collection screen ---------- */
+  .ideas-top { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; }
+  .ideas-top h1 { margin: 0; font-size: clamp(1.15rem, 5.4vw, 1.4rem); font-weight: 800; white-space: nowrap; flex: 1; }
+  .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; background: rgba(255,255,255,.6);
+             border-radius: 999px; padding: 4px; margin-bottom: 14px; }
+  .filters button { border: 0; border-radius: 999px; padding: 9px 4px; font-weight: 700; font-size: .92rem; background: transparent; color: #6b6d86; white-space: nowrap; }
+  .filters button.on { background: #fff; color: var(--idea-text); box-shadow: 0 2px 8px rgba(96,104,190,.14); }
+  .progress { height: 10px; border-radius: 6px; background: rgba(255,255,255,.7); overflow: hidden; margin: -4px 0 6px; }
+  .progress i { display: block; height: 100%; background: linear-gradient(90deg, #ffd43b, #40c057); }
+  .progress-txt { font-size: .88rem; color: #6b6d86; margin-bottom: 14px; }
+  .month-h { font-weight: 800; color: #5e6078; margin: 18px 4px 8px; }
+  .idea-card { display: flex; gap: 12px; align-items: flex-start; background: #fff; border-radius: 20px; box-shadow: var(--shadow);
+               padding: 14px; margin-bottom: 12px; }
+  .idea-card.done { background: #f3fbf4; box-shadow: var(--shadow), inset 0 0 0 2px #b2f2bb; }
+  .check { flex: none; width: 34px; height: 34px; border-radius: 10px; border: 2px solid var(--idea-ring); background: #fff;
+           font-size: 1.1rem; cursor: pointer; display: grid; place-items: center; padding: 0; }
+  .idea-card.done .check { border-color: #40c057; background: #40c057; color: #fff; }
+  .idea-card .body { flex: 1; min-width: 0; }
+  .idea-card .when { font-size: .82rem; color: var(--idea-text); font-weight: 700; }
+  .idea-card.done .when { color: #2b8a3e; }
+  .idea-card .txt { white-space: pre-wrap; word-break: break-word; color: #3d3f55; margin-top: 2px; cursor: pointer; }
+  .idea-card.done .txt { color: #6b7d6e; }
+  .idea-item .done-mark { color: #2b8a3e; font-weight: 700; margin-right: 4px; }
+
   /* ---------- floating write button ---------- */
   .fab { position: fixed; right: max(18px, calc(50% - 262px)); bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 8;
          width: 64px; height: 64px; border-radius: 50%; border: 0; color: #fff; font-size: 2rem; line-height: 1; cursor: pointer;
@@ -299,6 +323,7 @@
       <div class="menu" id="menu" hidden>
         <button id="menuToday"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/></svg>오늘로 이동</button>
         <button id="menuFloating" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>플로팅 녹음 버튼</button>
+        <button id="menuIdeas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>아이디어 모아보기</button>
         <button id="menuRefresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>새로고침</button>
         <button id="menuLogout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg>이 기기에서 연결 해제</button>
         <div class="ver" id="verInfo"></div>
@@ -371,6 +396,21 @@
     </div>
   </section>
 
+  <!-- all ideas, with "realized" check -->
+  <section id="ideasView" hidden>
+    <div class="ideas-top">
+      <button class="round" id="ideasBack" aria-label="뒤로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <h1>💡 아이디어 모아보기</h1>
+      <button class="pill" id="ideasAdd">＋ 기록</button>
+    </div>
+    <div class="filters" id="ideaFilters">
+      <button data-f="all" class="on">전체</button><button data-f="open">진행 중</button><button data-f="done">✅ 실현</button>
+    </div>
+    <div class="progress"><i id="ideaProgress"></i></div>
+    <div class="progress-txt" id="ideaProgressTxt"></div>
+    <div id="ideasList"></div>
+  </section>
+
   <!-- one day: entry cards -->
   <section id="dayView" hidden>
     <div class="day-top">
@@ -428,7 +468,7 @@
 <div class="toast" id="toast" hidden></div>
 <script>
 // Bump on every change: open apps compare this with the published page and reload themselves.
-const APP_VERSION = "2026-11-18.3";
+const APP_VERSION = "2026-11-19.1";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
 const KIND = { idea: "아이디어", diary: "일기" };
@@ -628,6 +668,7 @@ function render() {
     $(box).hidden = tab !== t;
   }
   if (viewDay) renderDayView();
+  renderIdeasView();
 }
 
 function renderDayCard() {
@@ -663,20 +704,91 @@ function renderIdeas() {
   const ideas = (cache.entries[monthKey()] || []).filter(e => kindOf(e) === "idea").slice().reverse();
   const head = el("div", "head");
   head.append(el("h2", null, `💡 ${m}월 아이디어 ${ideas.length ? ideas.length + "개" : ""}`));
-  const add = el("button", "pill", "＋ 기록");
+  const add = el("button", "pill", "＋ 기록"), all = el("button", "pill", "모아보기 ›");
   add.onclick = () => openComposer({ kind: "idea" });
-  head.append(add);
+  all.onclick = openIdeas;
+  const btns = el("span"); btns.style.display = "flex"; btns.style.gap = "6px";
+  btns.append(all, add); head.append(btns);
   card.replaceChildren(head);
   if (!ideas.length) card.append(el("div", "empty", "떠오른 생각을 바로 적거나 말로 남겨 보세요. 오른쪽 아래 ＋ 버튼으로도 기록할 수 있어요."));
   for (const e of ideas) {
     const item = el("div", "idea-item"), when = el("div", "when");
     const [, mm, dd] = e.time.slice(0, 10).split("-").map(Number);
     when.append(el("div", null, `${mm}/${dd}`), el("div", null, e.time.slice(11, 16)));
-    item.append(when, el("div", "txt", e.pending ? (failed(e) ? "⚠️ 받아쓰기 실패 — 눌러서 다시 시도" : "🎙 받아쓰는 중…") : plainText(e.text)));
+    const txt = el("div", "txt");
+    if (e.done) txt.append(el("span", "done-mark", "✅ 실현"));
+    txt.append(e.pending ? (failed(e) ? "⚠️ 받아쓰기 실패 — 눌러서 다시 시도" : "🎙 받아쓰는 중…") : plainText(e.text));
+    item.append(when, txt);
     item.onclick = () => openDay(e.time.slice(0, 10));
     card.append(item);
   }
 }
+
+// ---------- ideas collection (all months) ----------
+let ideaFilter = "all", ideasOpen = false;
+
+async function loadAllMonths() {
+  const res = await gh(`/contents/diary/entries?ref=main&dir=${Date.now()}`);
+  if (!res.ok) return;
+  const names = (await res.json()).map(f => f.name).filter(n => /^\d{4}-\d{2}\.json$/.test(n)).map(n => n.slice(0, 7));
+  await Promise.all(names.map(k => loadMonth(k).catch(() => {})));
+}
+
+function allIdeas() {
+  return Object.keys(cache.entries).sort().reverse()
+    .flatMap(k => cache.entries[k].filter(e => kindOf(e) === "idea").slice().reverse());
+}
+
+async function setDone(e, done) {
+  try {
+    await updateMonth(e.time.slice(0, 7), list => {
+      const x = list.find(v => String(v.id) === String(e.id));
+      if (!x) throw new Error("이미 삭제된 아이디어예요.");
+      if (done) { x.done = true; x.doneAt = isoWithOffset(todayIso, nowHHMM()); } else { delete x.done; delete x.doneAt; }
+    }, done ? "diary: idea realized" : "diary: idea reopened");
+    toast(done ? "✅ 실현했어요! 멋져요" : "진행 중으로 되돌렸어요");
+  } catch (err) { toast(err.message); }
+  render();
+}
+
+function checkButton(e) {
+  const b = el("button", "check", e.done ? "✓" : "");
+  b.title = e.done ? "실현됨 — 누르면 되돌리기" : "실현했으면 체크";
+  b.disabled = !!e.pending;
+  b.onclick = ev => { ev.stopPropagation(); setDone(e, !e.done); };
+  return b;
+}
+
+function renderIdeasView() {
+  if (!ideasOpen) return;
+  const ideas = allIdeas(), done = ideas.filter(e => e.done).length;
+  for (const b of $("ideaFilters").children) {
+    b.classList.toggle("on", b.dataset.f === ideaFilter);
+    const n = b.dataset.f === "all" ? ideas.length : b.dataset.f === "done" ? done : ideas.length - done;
+    b.textContent = `${b.dataset.f === "all" ? "전체" : b.dataset.f === "done" ? "✅ 실현" : "진행 중"} ${n}`;
+  }
+  $("ideaProgress").style.width = ideas.length ? `${Math.round(done / ideas.length * 100)}%` : "0";
+  $("ideaProgressTxt").textContent = ideas.length ? `아이디어 ${ideas.length}개 중 ${done}개 실현 (${Math.round(done / ideas.length * 100)}%)` : "";
+  const shown = ideas.filter(e => ideaFilter === "all" || (ideaFilter === "done") === !!e.done);
+  const listEl = $("ideasList"); listEl.replaceChildren();
+  if (!shown.length) listEl.append(el("div", "entry empty", ideas.length ? "여기에 해당하는 아이디어가 없어요." :
+    "아직 아이디어가 없어요.\n오른쪽 아래 ＋ 나 플로팅 💡 버튼으로 떠오른 생각을 남겨 보세요."));
+  let lastMonth = null;
+  for (const e of shown) {
+    const mk = e.time.slice(0, 7);
+    if (mk !== lastMonth) { lastMonth = mk; listEl.append(el("div", "month-h", `${mk.slice(0, 4)}년 ${+mk.slice(5)}월`)); }
+    const card = el("div", "idea-card" + (e.done ? " done" : "")), body = el("div", "body");
+    const [, mm, dd] = e.time.slice(0, 10).split("-").map(Number);
+    body.append(el("div", "when", `${mm}월 ${dd}일 ${e.time.slice(11, 16)}${e.done && e.doneAt ? ` · ✅ ${+e.doneAt.slice(5, 7)}/${+e.doneAt.slice(8, 10)} 실현` : ""}`));
+    const txt = el("div", "txt", e.pending ? (failed(e) ? "⚠️ 받아쓰기 실패 — 눌러서 확인" : "🎙 받아쓰는 중…") : plainText(e.text));
+    txt.onclick = () => openDay(e.time.slice(0, 10));
+    body.append(txt);
+    card.append(checkButton(e), body);
+    listEl.append(card);
+  }
+}
+
+function openIdeas() { if (location.hash !== "#ideas") location.hash = "ideas"; else showDayFromHash(); }
 
 // ---------- day screen ----------
 function openDay(iso) {
@@ -697,7 +809,7 @@ async function openFromButton(kind) {
     if (list.length) { latest = list[list.length - 1]; break; }
   }
   viewDay = null; $("dayView").hidden = true; $("app").hidden = false;
-  if (kind === "idea") { tab = "idea"; render(); window.scrollTo(0, $("ideasCard").offsetTop - 80); return; }
+  if (kind === "idea") { tab = "idea"; render(); location.hash = "ideas"; return; }
   if (!latest) { tab = "day"; selected = todayIso; render(); toast("아직 일기가 없어요"); return; }
   location.hash = `day=${latest.time.slice(0, 10)}`;        // pushed on top of home, so back returns home
 }
@@ -705,6 +817,15 @@ async function openFromButton(kind) {
 async function showDayFromHash() {
   const op = location.hash.match(/^#open=(diary|idea)$/);
   if (op) return openFromButton(op[1]);
+  ideasOpen = location.hash === "#ideas";
+  $("ideasView").hidden = !ideasOpen;
+  if (ideasOpen) {
+    viewDay = null; $("dayView").hidden = true; $("app").hidden = true; window.scrollTo(0, 0);
+    renderIdeasView();
+    try { await loadAllMonths(); } catch (e) { toast(e.message); }
+    renderIdeasView();
+    return;
+  }
   const mt = location.hash.match(/^#day=(\d{4}-\d{2}-\d{2})$/);
   viewDay = mt ? mt[1] : null;
   $("dayView").hidden = !viewDay; $("app").hidden = !!viewDay;
@@ -734,11 +855,17 @@ function entryCard(e) {
   const kind = kindOf(e);
   const card = el("div", "entry " + kind), row = el("div", "row");
   const t = el("span", "tpill" + (kind === "idea" ? " idea" : e.edited ? " edited" : ""),
-               (kind === "idea" ? "💡 " : "") + e.time.slice(11, 16));
+               (kind === "idea" ? (e.done ? "✅ " : "💡 ") : "") + e.time.slice(11, 16));
   if (e.from) t.append(el("span", "who", ` · ${e.from}`));
   if (e.edited) t.append(el("span", "who", " (수정됨)"));
   const tools = el("span", "tools");
   if (e.voice) { const v = el("span", null, "🎙️"); v.title = "말로 남긴 기록"; tools.append(v); }
+  if (kind === "idea") {
+    const ok = el("button", null, e.done ? "✅" : "☑️");
+    ok.title = e.done ? "실현됨 — 누르면 되돌리기" : "실현했으면 체크"; ok.disabled = !!e.pending;
+    ok.onclick = () => setDone(e, !e.done);
+    tools.append(ok);
+  }
   const edit = el("button", null, "✏️"), del = el("button", null, "🗑️");
   edit.title = "수정"; del.title = "삭제"; edit.disabled = !!e.pending;
   edit.onclick = () => openComposer({ id: e.id, kind, date: e.time.slice(0, 10), time: e.time.slice(11, 16), text: e.text });
@@ -1061,7 +1188,7 @@ function renderFloating() {
   // preview of the two buttons at the chosen size / gap / opacity
   const pv = $("fPreview"); pv.replaceChildren(); pv.style.flexDirection = apart || f.layout === "row" ? "row" : "column";
   pv.style.opacity = f.alpha / 100;
-  [["📖", "#ec4b84"], ["💡", "#f59f00"]].forEach(([emo, color], i) => {
+  [["📖", "#7c5cff"], ["💡", "#f59f00"]].forEach(([emo, color], i) => {
     const b = el("i", null, emo);
     Object.assign(b.style, { width: `${f.size}px`, height: `${f.size}px`, background: color, fontSize: `${f.size * 0.45}px`,
                              [apart || f.layout === "row" ? "marginLeft" : "marginTop"]: i ? `${apart ? 70 : f.gap}px` : "0" });
@@ -1151,6 +1278,7 @@ $("logout").onclick = logout;
 $("menuBtn").onclick = ev => { ev.stopPropagation(); $("menu").hidden = !$("menu").hidden; };
 $("menuToday").onclick = () => { closeMenu(); goToday(); };
 $("menuRefresh").onclick = () => { closeMenu(); refresh(); };
+$("menuIdeas").onclick = () => { closeMenu(); openIdeas(); };
 if (native) $("menuFloating").hidden = false;
 $("menuFloating").onclick = () => { closeMenu(); openFloating(); };
 $("fOn").onclick = () => { native.enableFloating(!fState.enabled); if (fState.enabled) { fState.enabled = false; renderFloating(); } };
@@ -1168,6 +1296,9 @@ $("verInfo").textContent = `버전 ${APP_VERSION}`;
 $("backBtn").onclick = () => { if (history.length > 1 && location.hash) history.back(); else location.hash = ""; };
 $("dayAdd").onclick = () => openComposer({ date: viewDay });
 $("datePick").onchange = () => { const v = $("datePick").value; if (v) location.replace(`#day=${v}`); };
+$("ideasBack").onclick = () => { if (history.length > 1 && location.hash) history.back(); else location.hash = ""; };
+$("ideasAdd").onclick = () => openComposer({ kind: "idea", date: todayIso });
+for (const b of $("ideaFilters").children) b.onclick = () => { ideaFilter = b.dataset.f; renderIdeasView(); };
 $("fab").onclick = () => openComposer({ date: viewDay || todayIso });
 for (const b of $("kindSeg").children) b.onclick = () => setKind(b.dataset.kind);
 $("cCancel").onclick = cancelComposer;
