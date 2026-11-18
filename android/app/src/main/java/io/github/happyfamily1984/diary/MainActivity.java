@@ -32,7 +32,9 @@ public class MainActivity extends Activity {
     private FrameLayout root;
     private String appUrl;
     private PermissionRequest pendingMic;           // a page request waiting for the Android mic permission
-    private static final int REQ_MIC = 7, REQ_FLOATING = 8;
+    private static final int REQ_MIC = 7, REQ_FLOATING = 8, REQ_LINK = 9;
+    private String pendingRecord;                   // 배민리프레시 asked to start a recording ("diary" / "idea")
+    private boolean askingLinkMic;
     private boolean enablingFloating;               // waiting for the user to grant overlay / mic permission
 
     @Override
@@ -93,6 +95,7 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         applySystemBars();
         setContentView(root);
+        if (savedInstanceState == null) takeRecord(getIntent());
         String open = getIntent().getStringExtra("open");
         if (savedInstanceState != null && open == null) webView.restoreState(savedInstanceState);
         else webView.loadUrl(open != null ? appUrl + "#open=" + open : appUrl);
@@ -129,6 +132,42 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- floating record buttons
 
     private SharedPreferences floatPrefs() { return getSharedPreferences(FloatingService.PREFS, MODE_PRIVATE); }
+
+    /**
+     * 배민리프레시 shows the 📖 / 💡 buttons itself. When the recording service is not running it opens
+     * this screen with "record": the service must be started while the app is visible to use the
+     * microphone, so we start it, begin recording and step back to the app the user was in.
+     */
+    private void takeRecord(Intent intent) {
+        String kind = intent.getStringExtra("record");
+        if (kind == null) return;
+        intent.removeExtra("record");
+        if (kind.matches("diary|idea") && FloatingService.hosted(this)) pendingRecord = kind;
+    }
+
+    private void runPendingRecord() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (!askingLinkMic) {
+                askingLinkMic = true;
+                requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, REQ_LINK);
+            }
+            return;
+        }
+        String kind = pendingRecord;
+        pendingRecord = null;
+        try {
+            startForegroundService(new Intent(this, FloatingService.class)
+                    .setAction(FloatingService.ACTION_RECORD).putExtra("kind", kind));
+            webView.postDelayed(() -> moveTaskToBack(true), 600);
+        } catch (Exception ignored) { }
+    }
+
+    /** 배민리프레시 was removed while it was showing the buttons: show our own again. */
+    private void dropStaleHost() {
+        if (!FloatingService.hosted(this)) return;
+        try { getPackageManager().getPackageInfo(FloatingService.HOST_PKG, 0); }
+        catch (PackageManager.NameNotFoundException e) { floatPrefs().edit().putBoolean("hosted", false).apply(); }
+    }
 
     private void startFloating(String action) {
         Intent i = new Intent(this, FloatingService.class);
@@ -204,7 +243,10 @@ public class MainActivity extends Activity {
                 else {
                     enablingFloating = false;
                     floatPrefs().edit().putBoolean("enabled", false).apply();
-                    stopService(new Intent(MainActivity.this, FloatingService.class));
+                    // 배민리프레시 is showing the buttons: keep the recorder running for it
+                    if (FloatingService.hosted(MainActivity.this) && FloatingService.canRun(MainActivity.this))
+                        startFloating(FloatingService.ACTION_APPLY);
+                    else stopService(new Intent(MainActivity.this, FloatingService.class));
                     notifyPage();
                 }
             });
@@ -219,6 +261,13 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        if (code == REQ_LINK) {
+            askingLinkMic = false;
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                if (pendingRecord != null) runPendingRecord();
+            } else pendingRecord = null;
+            return;
+        }
         if (code == REQ_FLOATING) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 enablingFloating = false;
@@ -248,6 +297,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        takeRecord(intent);
         String open = intent.getStringExtra("open");
         if (open != null && open.matches("diary|idea"))
             webView.evaluateJavascript("location.hash='open=" + open + "'", null);
@@ -263,8 +313,11 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         webView.onResume();
-        if (enablingFloating) continueEnabling();     // back from the "display over other apps" screen
-        else if (floatPrefs().getBoolean("enabled", false) && FloatingService.canRun(this)) startFloating(null);
+        dropStaleHost();
+        if (pendingRecord != null) runPendingRecord();
+        else if (enablingFloating) continueEnabling();     // back from the "display over other apps" screen
+        else if ((floatPrefs().getBoolean("enabled", false) || FloatingService.hosted(this))
+                && FloatingService.canRun(this)) startFloating(null);
         notifyPage();
     }
 

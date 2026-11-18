@@ -62,6 +62,12 @@ public class FloatingService extends Service {
     public static final String PREFS = "floating";
     static final String ACTION_STOP = "stop";
     static final String ACTION_APPLY = "apply";
+    static final String ACTION_RECORD = "record";      // start recording right away (extra "kind")
+    // 배민리프레시 can show the two buttons itself ("hosted"): it sends taps through LinkProvider
+    // and is told the recording state with this broadcast.
+    static final String HOST_PKG = "com.baeminrefresh.app";
+    static final String STATE_ACTION = "io.github.happyfamily1984.diary.STATE";
+    static volatile FloatingService instance;
     private static final String CHANNEL = "floating";
     private static final int NOTIFICATION_ID = 1;
     private static final int RATE = 16000;
@@ -85,9 +91,26 @@ public class FloatingService extends Service {
     private AudioFocusRequest focusRequest;
     private boolean sending;
 
+    static boolean hosted(Context c) {
+        return c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("hosted", false);
+    }
+
+    /** The microphone is always needed; "display over other apps" only when this app draws the buttons itself. */
     static boolean canRun(Context c) {
-        return Settings.canDrawOverlays(c)
+        return (hosted(c) || Settings.canDrawOverlays(c))
                 && c.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** "idle", "recording" or "sending" (+ which button) — read by LinkProvider from another thread. */
+    String stateName() { return recording ? "recording" : recordingKind != null ? "sending" : "idle"; }
+    String stateKind() { String k = recordingKind; return k == null ? "" : k; }
+
+    private void broadcastState() {
+        if (!hosted(this)) return;
+        try {
+            sendBroadcast(new Intent(STATE_ACTION).setPackage(HOST_PKG)
+                    .putExtra("state", stateName()).putExtra("kind", stateKind()));
+        } catch (Exception ignored) { }
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
@@ -96,6 +119,7 @@ public class FloatingService extends Service {
     public void onCreate() {
         super.onCreate();
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        instance = this;
     }
 
     @Override
@@ -106,9 +130,15 @@ public class FloatingService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        startAsForeground();
-        if (!canRun(this)) { stopSelf(); return START_NOT_STICKY; }
-        if (btn[0] == null) createButtons(); else applySettings();
+        try { startAsForeground(); }
+        catch (Exception e) { stopSelf(); return START_NOT_STICKY; }   // not allowed to start from the background
+        boolean wanted = prefs().getBoolean("enabled", false) || hosted(this);
+        if (!wanted || !canRun(this)) { stopSelf(); return START_NOT_STICKY; }
+        syncButtons();
+        if (ACTION_RECORD.equals(action)) {
+            String kind = intent.getStringExtra("kind");
+            if (kind != null && kind.matches("diary|idea") && !recording && !sending) onTap(kind);
+        }
         sendLeftovers();
         return START_STICKY;
     }
@@ -116,11 +146,37 @@ public class FloatingService extends Service {
     @Override
     public void onDestroy() {
         recording = false;
+        recordingKind = null;
+        broadcastState();
+        if (instance == this) instance = null;
+        removeButtons();
+        super.onDestroy();
+    }
+
+    private void removeButtons() {
         for (int i = 0; i < 2; i++) {
             if (btn[i] != null) { try { wm.removeView(btn[i]); } catch (Exception ignored) { } btn[i] = null; }
         }
-        super.onDestroy();
     }
+
+    /** Own buttons are shown only when switched on here and 배민리프레시 is not showing them instead. */
+    void syncButtons() {
+        boolean own = !hosted(this) && prefs().getBoolean("enabled", false) && Settings.canDrawOverlays(this);
+        if (!own) removeButtons();
+        else if (btn[0] == null) createButtons();
+        else applySettings();
+    }
+
+    /** 배민리프레시 attached or detached (called on the main thread by LinkProvider). */
+    void hostChanged() {
+        if (!hosted(this) && !prefs().getBoolean("enabled", false)) { stopSelf(); return; }
+        syncButtons();
+        try { startAsForeground(); } catch (Exception ignored) { }
+        broadcastState();
+    }
+
+    /** A tap on the button that 배민리프레시 shows. */
+    void hostTap(String kind) { onTap(kind); }
 
     private SharedPreferences prefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
 
@@ -142,7 +198,8 @@ public class FloatingService extends Service {
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         Notification n = b.setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("일기장 플로팅 녹음 버튼")
-                .setContentText(recording ? "녹음 중이에요" : "📖 일기 · 💡 아이디어 버튼이 켜져 있어요")
+                .setContentText(recording ? "녹음 중이에요"
+                        : hosted(this) ? "배민리프레시의 📖 · 💡 버튼으로 녹음해요" : "📖 일기 · 💡 아이디어 버튼이 켜져 있어요")
                 .setContentIntent(open)
                 .addAction(new Notification.Action.Builder(null, "끄기", stop).build())
                 .setOngoing(true)
@@ -171,6 +228,7 @@ public class FloatingService extends Service {
     }
 
     private void refreshColors() {
+        broadcastState();
         if (btn[0] == null) return;
         paint(btn[0], "diary".equals(recordingKind) ? (recording ? RED : BLUE) : PURPLE);
         paint(btn[1], "idea".equals(recordingKind) ? (recording ? RED : BLUE) : AMBER);

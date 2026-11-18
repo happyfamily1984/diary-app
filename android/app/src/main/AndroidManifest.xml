@@ -12,6 +12,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- 배민리프레시 can show the 📖 / 💡 buttons for us (see LinkProvider) -->
+    <queries>
+        <package android:name="com.baeminrefresh.app" />
+    </queries>
+
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
@@ -32,5 +37,10 @@
             android:name=".FloatingService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <!-- taps from 배민리프레시's 📖 / 💡 buttons; LinkProvider only accepts that app -->
+        <provider
+            android:name=".LinkProvider"
+            android:authorities="io.github.happyfamily1984.diary.link"
+            android:exported="true" />
     </application>
 </manifest>
