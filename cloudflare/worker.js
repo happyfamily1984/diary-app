@@ -8,13 +8,13 @@
 // 요청은 앱에 넣은 GitHub 토큰으로 확인합니다 (일기 저장소를 읽을 수 있어야 함).
 //
 // 필요한 Secrets (Settings → Variables and Secrets, Type: Secret):
-//   GEMINI_API_KEY   Gemini API 키
+//   GEMINI_API_KEY   Gemini API 키 (예비 키: GEMINI_API_KEY_2 … GEMINI_API_KEY_5 — 앞의 키가 막히면 다음 키를 씀)
 //   GITHUB_TOKEN     daily 저장소만 선택한 Fine-grained 토큰 (Contents: Read and write)
 //   GITHUB_REPO      happyfamily1984/daily
 // 선택: GEMINI_MODEL, DIARY_TIMEZONE (기본 Asia/Seoul)
 // 예전 텔레그램 연동이 남아 있으면 Worker 주소를 열 때 끊습니다 (TELEGRAM_BOT_TOKEN 이 있을 때).
 
-const VERSION = "2026-11-18.1";
+const VERSION = "2026-11-18.2";
 const MAX_SUBREQUESTS = 40;          // free plan allows 50 per invocation; keep headroom
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const AUDIO_PART = 1024 * 1024;      // Durable Object storage values are limited to 2 MB
@@ -203,7 +203,33 @@ function fixWords(text, words) {
 
 // ---------------------------------------------------------------- Gemini
 
-async function geminiPost(ctx, path, body) {
+// GEMINI_API_KEY plus spare keys GEMINI_API_KEY_2 … GEMINI_API_KEY_5 (separate Google projects/accounts).
+const geminiKeys = env => [env.GEMINI_API_KEY, ...[2, 3, 4, 5].map(n => env[`GEMINI_API_KEY_${n}`])].filter(Boolean);
+
+class GeminiError extends Error {
+  constructor(message, status) { super(message); this.status = status; }
+}
+// Worth trying the next key: overloaded, rate/quota-limited, or the key itself was refused.
+const keyProblem = e => e instanceof GeminiError &&
+  (TRANSIENT.has(e.status) || e.status === 401 || e.status === 403 || (e.status === 400 && /api[_ ]?key/i.test(e.message)));
+
+// Runs fn(key) with the first key, moving on to the spare keys when a key is busy, out of quota or refused.
+async function withGeminiKeys(ctx, fn) {
+  const keys = geminiKeys(ctx.env);
+  if (!keys.length) throw new Error("GEMINI_API_KEY 가 없어요");
+  let error;
+  for (const [i, key] of keys.entries()) {
+    try { return await fn(key); }
+    catch (e) {
+      error = e;
+      if (!keyProblem(e) || i === keys.length - 1) throw e;
+      console.warn(`Gemini key #${i + 1} unavailable (${e.message.slice(0, 80)}), trying the next key`);
+    }
+  }
+  throw error;
+}
+
+async function geminiPost(ctx, path, body, key) {
   const models = [ctx.env.GEMINI_MODEL || "gemini-flash-latest", ...FALLBACK_MODELS];
   let error;
   for (const model of [...new Set(models)]) {
@@ -211,11 +237,11 @@ async function geminiPost(ctx, path, body) {
       if (ctx.budgetLeft() < 3) throw new Error("subrequest budget exhausted");
       const res = await ctx.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": ctx.env.GEMINI_API_KEY },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify(body),
       });
       if (res.ok) return res.json();
-      error = new Error(`Gemini ${res.status} (${model}): ${(await res.text()).slice(0, 200)}`);
+      error = new GeminiError(`Gemini ${res.status} (${model}): ${(await res.text()).slice(0, 200)}`, res.status);
       if (!TRANSIENT.has(res.status)) throw error;
       if (attempt < RETRY_DELAYS.length) await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
     }
@@ -223,12 +249,12 @@ async function geminiPost(ctx, path, body) {
   throw error;
 }
 
-async function generate(ctx, system, parts, temperature) {
+async function generate(ctx, system, parts, temperature, key) {
   const data = await geminiPost(ctx, "generateContent", {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts }],
     generationConfig: { temperature },
-  });
+  }, key);
   const cand = (data.candidates || [])[0];
   if (!cand) throw new Error(`Gemini 가 답하지 않았습니다: ${(data.promptFeedback || {}).blockReason || "응답 없음"}`);
   const text = ((cand.content || {}).parts || []).map(p => p.text || "").join("").trim();
@@ -237,8 +263,7 @@ async function generate(ctx, system, parts, temperature) {
 }
 
 // Audio goes through the Gemini Files API as raw bytes — no base64 work in the Worker.
-async function uploadToGemini(ctx, bytes, mime) {
-  const key = ctx.env.GEMINI_API_KEY;
+async function uploadToGemini(ctx, bytes, mime, key) {
   const start = await ctx.fetch("https://generativelanguage.googleapis.com/upload/v1beta/files", {
     method: "POST",
     headers: {
@@ -250,13 +275,13 @@ async function uploadToGemini(ctx, bytes, mime) {
     body: JSON.stringify({ file: { display_name: "diary-voice" } }),
   });
   const url = start.headers.get("x-goog-upload-url");
-  if (!start.ok || !url) throw new Error(`Gemini upload start ${start.status}`);
+  if (!start.ok || !url) throw new GeminiError(`Gemini upload start ${start.status}`, start.status);
   const up = await ctx.fetch(url, {
     method: "POST",
     headers: { "X-Goog-Upload-Offset": "0", "X-Goog-Upload-Command": "upload, finalize" },
     body: bytes,
   });
-  if (!up.ok) throw new Error(`Gemini upload ${up.status}`);
+  if (!up.ok) throw new GeminiError(`Gemini upload ${up.status}`, up.status);
   let file = (await up.json()).file;
   for (let i = 0; file.state === "PROCESSING" && i < 5; i++) {       // some formats need a moment
     await new Promise(r => setTimeout(r, 2000));
@@ -267,12 +292,18 @@ async function uploadToGemini(ctx, bytes, mime) {
 }
 
 async function transcribe(ctx, bytes, mime) {
-  const file = await uploadToGemini(ctx, bytes, mime);
   const words = await dictionary(ctx);
-  const text = await generate(ctx, TRANSCRIBE_PROMPT + dictionaryHint(words),
-    [{ file_data: { mime_type: file.mimeType || mime, file_uri: file.uri } }, { text: "받아써 줘." }], 0);
-  ctx.fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}`,
-            { method: "DELETE", headers: { "x-goog-api-key": ctx.env.GEMINI_API_KEY } }).catch(() => {});
+  // An uploaded file belongs to the key's project, so upload and transcribe with the same key.
+  const text = await withGeminiKeys(ctx, async key => {
+    const file = await uploadToGemini(ctx, bytes, mime, key);
+    try {
+      return await generate(ctx, TRANSCRIBE_PROMPT + dictionaryHint(words),
+        [{ file_data: { mime_type: file.mimeType || mime, file_uri: file.uri } }, { text: "받아써 줘." }], 0, key);
+    } finally {
+      ctx.fetch(`https://generativelanguage.googleapis.com/v1beta/${file.name}`,
+                { method: "DELETE", headers: { "x-goog-api-key": key } }).catch(() => {});
+    }
+  });
   return `🎙 ${fixWords(text, words)}`;
 }
 
@@ -289,7 +320,7 @@ async function analyzeMonth(ctx, month) {
   lines.push("");
   for (const e of entries)
     lines.push(`[${e.time.slice(0, 16).replace("T", " ")}] (${KINDS[kindOf(e)]})${e.from ? ` (${e.from})` : ""} ${e.text}`);
-  const text = await generate(ctx, ANALYSIS_PROMPT, [{ text: lines.join("\n") }], 0.7);
+  const text = await withGeminiKeys(ctx, key => generate(ctx, ANALYSIS_PROMPT, [{ text: lines.join("\n") }], 0.7, key));
   const path = `diary/analysis/${month}.md`;
   const { sha } = await readWithSha(ctx, path);
   const res = await writeText(ctx, path, text.trim() + "\n", sha, `diary: analysis ${month}`);
@@ -387,6 +418,7 @@ export class DiaryJobs {
       for (let i = 0; i < parts; i++) entries[`audio:${id}:${i}`] = bytes.slice(i * AUDIO_PART, (i + 1) * AUDIO_PART);
       for (const [k, v] of Object.entries(entries)) await s.put(k, v);
       await s.put(`audio:${id}`, { mime, parts, size: bytes.byteLength, at: Date.now() });
+      return new Response("ok");                    // the job starts once the entry is saved (/kick)
     }
     if (url.pathname === "/status") {
       const audio = [...(await s.list({ prefix: "audio:" })).keys()].filter(k => k.split(":").length === 2).length;
@@ -462,6 +494,7 @@ async function onApi(request, env) {
       await jobs(env).fetch(`https://jobs/audio?id=${id}`, { method: "PUT", headers: { "Content-Type": mime }, body });
       await upsert(ctx, { id, time }, { text: VOICE_PENDING, kind, voice, pending: true, source: "app" },
                    "diary: voice entry from app");
+      await kickJobs(env);                          // only now: the job must find the saved entry
       return json({ ok: true, id, month: time.slice(0, 7) });
     }
     if (url.pathname === "/api/retry") {             // try a failed transcription again
@@ -508,9 +541,15 @@ async function setup(request, env) {
     if (!w.ok) return { ok: false, step: "GitHub 쓰기 권한", status: w.status,
                         hint: "토큰 Permissions 에서 Contents 를 'Read and write' 로 바꾸세요" };
   }
-  const g = await ctx.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || "gemini-flash-latest"}`,
-                            { headers: { "x-goog-api-key": env.GEMINI_API_KEY } });
-  if (!g.ok) return { ok: false, step: "Gemini", status: g.status, hint: "GEMINI_API_KEY 값을 확인하세요" };
+  const names = ["GEMINI_API_KEY", ...[2, 3, 4, 5].map(n => `GEMINI_API_KEY_${n}`)].filter(k => env[k]);
+  const gemini = {};
+  for (const name of names) {
+    const g = await ctx.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || "gemini-flash-latest"}`,
+                              { headers: { "x-goog-api-key": env[name] } });
+    gemini[name] = g.ok ? "OK" : `오류 ${g.status}`;
+  }
+  if (!Object.values(gemini).includes("OK"))
+    return { ok: false, step: "Gemini", gemini, hint: "GEMINI_API_KEY 값을 확인하세요" };
   let telegram = "사용 안 함";
   if (env.TELEGRAM_BOT_TOKEN) {                       // the app no longer uses Telegram: stop the old webhook
     const r = await ctx.fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/deleteWebhook`).catch(() => null);
@@ -521,7 +560,7 @@ async function setup(request, env) {
     if (!env.JOBS) jobsStatus = "JOBS 연결 없음 (배포 설정 확인 필요)";
     else { await kickJobs(env); jobsStatus = await (await jobs(env).fetch("https://jobs/status")).json(); }
   } catch (e) { jobsStatus = `오류: ${e.message}`; }
-  return { ok: true, version: VERSION, github: "읽기·쓰기 권한 OK", gemini: "OK", jobs: jobsStatus, telegram,
+  return { ok: true, version: VERSION, github: "읽기·쓰기 권한 OK", gemini, jobs: jobsStatus, telegram,
            note: "앱 전용 서버입니다 (GitHub Actions·Cron·텔레그램 사용 안 함)" };
 }
 
