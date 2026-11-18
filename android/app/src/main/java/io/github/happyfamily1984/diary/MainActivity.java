@@ -4,14 +4,17 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -21,13 +24,16 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
+import org.json.JSONObject;
+
 /** Opens the diary web app full screen; the page itself holds all features. */
 public class MainActivity extends Activity {
     private WebView webView;
     private FrameLayout root;
     private String appUrl;
     private PermissionRequest pendingMic;           // a page request waiting for the Android mic permission
-    private static final int REQ_MIC = 7;
+    private static final int REQ_MIC = 7, REQ_FLOATING = 8;
+    private boolean enablingFloating;               // waiting for the user to grant overlay / mic permission
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,6 +47,7 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true); // the page keeps the GitHub token in localStorage
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
+        webView.addJavascriptInterface(new NativeBridge(), "DiaryNative");   // floating-button settings
         webView.setWebChromeClient(new WebChromeClient() {   // also shows the page's confirm() dialogs
             @Override
             public void onPermissionRequest(PermissionRequest request) {
@@ -118,8 +125,104 @@ public class MainActivity extends Activity {
                 + appUrl + "'\">다시 시도</button></body></html>";
     }
 
+    // ---------------------------------------------------------------- floating record buttons
+
+    private SharedPreferences floatPrefs() { return getSharedPreferences(FloatingService.PREFS, MODE_PRIVATE); }
+
+    private void startFloating(String action) {
+        Intent i = new Intent(this, FloatingService.class);
+        if (action != null) i.setAction(action);
+        startForegroundService(i);
+    }
+
+    /** Asks for whatever is missing (microphone, notifications, "display over other apps"), then starts the buttons. */
+    private void continueEnabling() {
+        if (!enablingFloating) return;
+        java.util.List<String> ask = new java.util.ArrayList<>();
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+            ask.add(Manifest.permission.RECORD_AUDIO);
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                && !floatPrefs().getBoolean("askedNotif", false)) {
+            ask.add(Manifest.permission.POST_NOTIFICATIONS);
+            floatPrefs().edit().putBoolean("askedNotif", true).apply();
+        }
+        if (!ask.isEmpty()) { requestPermissions(ask.toArray(new String[0]), REQ_FLOATING); return; }
+        if (!Settings.canDrawOverlays(this)) {
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
+            return;                                  // continues in onResume when the user comes back
+        }
+        enablingFloating = false;
+        floatPrefs().edit().putBoolean("enabled", true).apply();
+        startFloating(null);
+        notifyPage();
+    }
+
+    private void notifyPage() {
+        webView.post(() -> webView.evaluateJavascript("window.onFloatingChanged && window.onFloatingChanged()", null));
+    }
+
+    /** Called from the web page (window.DiaryNative). */
+    private class NativeBridge {
+        @JavascriptInterface
+        public String getFloating() {
+            SharedPreferences p = floatPrefs();
+            try {
+                return new JSONObject()
+                        .put("enabled", p.getBoolean("enabled", false))
+                        .put("size", p.getInt("size", 50)).put("alpha", p.getInt("alpha", 90))
+                        .put("gap", p.getInt("gap", 8)).put("layout", p.getString("layout", "column"))
+                        .put("snap", p.getBoolean("snap", true))
+                        .put("overlay", Settings.canDrawOverlays(MainActivity.this))
+                        .put("mic", checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+                        .toString();
+            } catch (Exception e) { return "{}"; }
+        }
+
+        @JavascriptInterface
+        public void setFloating(String json) {
+            try {
+                JSONObject o = new JSONObject(json);
+                SharedPreferences.Editor e = floatPrefs().edit();
+                if (o.has("size")) e.putInt("size", Math.max(24, Math.min(80, o.getInt("size"))));
+                if (o.has("alpha")) e.putInt("alpha", Math.max(20, Math.min(100, o.getInt("alpha"))));
+                if (o.has("gap")) e.putInt("gap", Math.max(0, Math.min(40, o.getInt("gap"))));
+                if (o.has("layout")) e.putString("layout", "row".equals(o.getString("layout")) ? "row" : "column");
+                if (o.has("snap")) e.putBoolean("snap", o.getBoolean("snap"));
+                e.apply();
+                if (floatPrefs().getBoolean("enabled", false) && FloatingService.canRun(MainActivity.this))
+                    runOnUiThread(() -> startFloating(FloatingService.ACTION_APPLY));
+            } catch (Exception ignored) { }
+        }
+
+        @JavascriptInterface
+        public void enableFloating(boolean on) {
+            runOnUiThread(() -> {
+                if (on) { enablingFloating = true; continueEnabling(); }
+                else {
+                    enablingFloating = false;
+                    floatPrefs().edit().putBoolean("enabled", false).apply();
+                    stopService(new Intent(MainActivity.this, FloatingService.class));
+                    notifyPage();
+                }
+            });
+        }
+
+        /** The buttons send recordings straight to the diary server with the app's token. */
+        @JavascriptInterface
+        public void setCredentials(String workerUrl, String token) {
+            floatPrefs().edit().putString("worker", workerUrl).putString("token", token).apply();
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        if (code == REQ_FLOATING) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                enablingFloating = false;
+                notifyPage();
+            } else continueEnabling();
+            return;
+        }
         if (code != REQ_MIC || pendingMic == null) return;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED)
             pendingMic.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
@@ -148,6 +251,9 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         webView.onResume();
+        if (enablingFloating) continueEnabling();     // back from the "display over other apps" screen
+        else if (floatPrefs().getBoolean("enabled", false) && FloatingService.canRun(this)) startFloating(null);
+        notifyPage();
     }
 
     @Override

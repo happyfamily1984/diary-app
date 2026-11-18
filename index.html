@@ -222,6 +222,25 @@
   .sheet .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
   .sheet .hint { font-size: .82rem; color: var(--muted); margin-top: 6px; }
 
+  /* ---------- floating-button settings ---------- */
+  .fset h3 { margin: 4px 0 4px; font-size: 1.1rem; }
+  .fset .row2 { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .fset .grip + .row2 { border-top: 0; }
+  .fset label { font-weight: 600; }
+  .fset .val { color: var(--muted); font-size: .9rem; min-width: 3.2em; text-align: right; }
+  .fset input[type=range] { flex: 1; accent-color: var(--pink); }
+  .fset .sizes { display: flex; gap: 6px; }
+  .fset .sizes button, .fset .lay button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-weight: 700; color: #6b6d86; }
+  .fset .sizes button.on, .fset .lay button.on { background: var(--pink); border-color: var(--pink); color: #fff; }
+  .fset .lay { display: flex; gap: 6px; }
+  .switch { position: relative; width: 52px; height: 30px; border-radius: 999px; border: 0; background: #d9dbee; flex: none; cursor: pointer; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .switch.on { background: var(--pink); }
+  .switch.on::after { left: 25px; }
+  .fset .note { font-size: .85rem; color: var(--muted); background: #f6f6fb; border-radius: 14px; padding: 10px 12px; margin-top: 8px; }
+  .fset .preview { display: flex; gap: 0; align-items: center; justify-content: center; padding: 10px 0 4px; min-height: 80px; }
+  .fset .preview i { display: grid; place-items: center; border-radius: 50%; color: #fff; font-style: normal; border: 2px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.18); }
+
   /* ---------- setup ---------- */
   .setup h2 { margin: 4px 0 8px; }
   .setup label { font-size: .9rem; color: var(--muted); }
@@ -279,6 +298,7 @@
       <button class="round" id="menuBtn" aria-label="메뉴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <div class="menu" id="menu" hidden>
         <button id="menuToday"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/></svg>오늘로 이동</button>
+        <button id="menuFloating" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>플로팅 녹음 버튼</button>
         <button id="menuRefresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>새로고침</button>
         <button id="menuLogout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg>이 기기에서 연결 해제</button>
         <div class="ver" id="verInfo"></div>
@@ -385,10 +405,28 @@
   </div>
 </div>
 
+<!-- floating record buttons over other apps (Android app only) -->
+<div class="sheet-back" id="floatSheet" hidden>
+  <div class="sheet fset" role="dialog" aria-label="플로팅 녹음 버튼">
+    <div class="grip"></div>
+    <div class="row2"><div><h3>📌 플로팅 녹음 버튼</h3><div class="small muted" id="fStatus"></div></div><button class="switch" id="fOn" aria-label="켜기"></button></div>
+    <div class="preview" id="fPreview"></div>
+    <div class="row2"><label>크기</label><span class="sizes" id="fSizes"><button data-v="30">30</button><button data-v="40">40</button><button data-v="50">50</button><button data-v="60">60</button></span></div>
+    <div class="row2"><label for="fAlpha">투명도</label><input type="range" id="fAlpha" min="20" max="100" step="5"><span class="val" id="fAlphaV"></span></div>
+    <div class="row2"><label for="fGap">간격</label><input type="range" id="fGap" min="0" max="40" step="1"><span class="val" id="fGapV"></span></div>
+    <div class="row2"><label>배치</label><span class="lay" id="fLay"><button data-v="column">세로</button><button data-v="row">가로</button></span></div>
+    <div class="row2"><label for="fSnap">화면 가장자리에 붙이기</label><button class="switch" id="fSnap" aria-label="가장자리에 붙이기"></button></div>
+    <div class="note">📖 누르면 일기, 💡 누르면 아이디어 녹음이 시작돼요(빨간색). 한 번 더 누르면 끝나고 파란색으로 바뀌며 전송돼요.
+      녹음하는 동안 유튜브·음악은 잠시 멈춰요.<br>버튼을 <b>끌어서</b> 다른 앱의 떠 있는 아이콘 옆, 원하는 높이에 놓으세요.
+      안드로이드는 다른 앱 아이콘의 위치를 알려 주지 않아서 자동으로 피하지는 못해요.</div>
+    <div class="row"><button class="btn-pink" id="fClose">닫기</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 <script>
 // Bump on every change: open apps compare this with the published page and reload themselves.
-const APP_VERSION = "2026-11-18.1";
+const APP_VERSION = "2026-11-18.2";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
 const KIND = { idea: "아이디어", diary: "일기" };
@@ -978,6 +1016,59 @@ function pingWorker() {
   workerApi("/api/open").catch(() => { openPinged = false; });
 }
 
+// ---------- floating record buttons (Android app: window.DiaryNative) ----------
+const native = window.DiaryNative || null;
+let floatOpen = false, fState = {};
+
+function readFloating() { try { fState = JSON.parse(native.getFloating()); } catch { fState = {}; } return fState; }
+
+function renderFloating() {
+  if (!floatOpen) return;
+  const f = fState;
+  $("fOn").classList.toggle("on", !!f.enabled);
+  $("fStatus").textContent = f.enabled ? "켜져 있어요 — 다른 앱 위에도 떠 있어요"
+    : !f.overlay ? "켜면 '다른 앱 위에 표시' 권한을 허용하는 화면이 열려요" : "꺼져 있어요";
+  for (const b of $("fSizes").children) b.classList.toggle("on", +b.dataset.v === f.size);
+  for (const b of $("fLay").children) b.classList.toggle("on", b.dataset.v === f.layout);
+  $("fAlpha").value = f.alpha; $("fAlphaV").textContent = `${f.alpha}%`;
+  $("fGap").value = f.gap; $("fGapV").textContent = f.gap === 0 ? "딱 붙게" : `${f.gap}`;
+  $("fSnap").classList.toggle("on", f.snap !== false);
+  // preview of the two buttons at the chosen size / gap / opacity
+  const pv = $("fPreview"); pv.replaceChildren(); pv.style.flexDirection = f.layout === "row" ? "row" : "column";
+  pv.style.opacity = f.alpha / 100;
+  [["📖", "#ec4b84"], ["💡", "#f59f00"]].forEach(([emo, color], i) => {
+    const b = el("i", null, emo);
+    Object.assign(b.style, { width: `${f.size}px`, height: `${f.size}px`, background: color, fontSize: `${f.size * 0.45}px`,
+                             [f.layout === "row" ? "marginLeft" : "marginTop"]: i ? `${f.gap}px` : "0" });
+    pv.append(b);
+  });
+}
+
+function setFloating(change) {
+  Object.assign(fState, change);
+  native.setFloating(JSON.stringify(change));
+  renderFloating();
+}
+
+function openFloating() {
+  readFloating(); floatOpen = true;
+  $("floatSheet").hidden = false; document.body.classList.add("sheet-open");
+  history.pushState({ sheet: "floating" }, "");
+  renderFloating();
+}
+function closeFloating(fromBack) {
+  if (!floatOpen) return;
+  floatOpen = false; $("floatSheet").hidden = true; document.body.classList.remove("sheet-open");
+  if (!fromBack) history.back();
+}
+window.onFloatingChanged = () => { readFloating(); renderFloating(); };
+
+// the buttons send recordings themselves, so they need the server address and the token
+async function shareCredentials() {
+  if (!native) return;
+  try { const url = await getWorkerUrl(); if (url) native.setCredentials(url, cfg.token); } catch {}
+}
+
 // ---------- self-update: GitHub Pages / WebView caches can serve an old page for a while ----------
 let lastVersionCheck = 0;
 async function checkForUpdate() {
@@ -1008,6 +1099,7 @@ async function connect() {
 function start() {
   checkForUpdate();
   pingWorker();
+  shareCredentials();
   $("setup").hidden = true; $("app").hidden = false; $("fab").hidden = false;
   show().then(() => { if (location.hash) showDayFromHash(); });
 }
@@ -1034,6 +1126,16 @@ $("logout").onclick = logout;
 $("menuBtn").onclick = ev => { ev.stopPropagation(); $("menu").hidden = !$("menu").hidden; };
 $("menuToday").onclick = () => { closeMenu(); goToday(); };
 $("menuRefresh").onclick = () => { closeMenu(); refresh(); };
+if (native) $("menuFloating").hidden = false;
+$("menuFloating").onclick = () => { closeMenu(); openFloating(); };
+$("fOn").onclick = () => { native.enableFloating(!fState.enabled); if (fState.enabled) { fState.enabled = false; renderFloating(); } };
+for (const b of $("fSizes").children) b.onclick = () => setFloating({ size: +b.dataset.v });
+for (const b of $("fLay").children) b.onclick = () => setFloating({ layout: b.dataset.v });
+$("fAlpha").oninput = () => setFloating({ alpha: +$("fAlpha").value });
+$("fGap").oninput = () => setFloating({ gap: +$("fGap").value });
+$("fSnap").onclick = () => setFloating({ snap: fState.snap === false });
+$("fClose").onclick = () => closeFloating(false);
+$("floatSheet").onclick = ev => { if (ev.target === $("floatSheet")) closeFloating(false); };
 $("menuLogout").onclick = () => { closeMenu(); logout(); };
 document.addEventListener("click", ev => { if (!ev.target.closest("#menu")) closeMenu(); });
 $("verInfo").textContent = `버전 ${APP_VERSION}`;
@@ -1054,6 +1156,7 @@ $("cText").addEventListener("keydown", heal.key);
 
 // Back button: closes the sheet first, then the day screen (hash), then the app asks to quit.
 window.addEventListener("popstate", () => {
+  if (floatOpen) { closeFloating(true); return; }
   if (!composer) return;
   if (composerDirty() && !confirm("작성 중인 내용을 버릴까요?")) { history.pushState({ composer: true }, ""); return; }
   closeComposer(true);
