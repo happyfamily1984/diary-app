@@ -26,7 +26,8 @@
 설정 후 Worker 주소를 브라우저로 한 번 열면 앱이 서버 주소를 알게 되고(예전 텔레그램 연결은 끊김), 설정을 점검합니다.
 토큰들은 코드가 아니라 Worker 의 Secrets 에 넣습니다 (`GEMINI_API_KEY`, `GITHUB_TOKEN`, `GITHUB_REPO`).
 
-## 📱 APK 서명
+## 📱 APK 서명 (덮어쓰기 업데이트)
 
-`APK_KEYSTORE_B64`(키스토어 base64), `APK_KEYSTORE_PASSWORD` 비밀값을 이 저장소에 넣으면 그 키로 서명해서,
-앱을 지우지 않고 덮어쓰기로 업데이트할 수 있습니다. 없으면 빌드마다 바뀌는 디버그 키로 서명합니다.
+이 저장소 Settings → Secrets and variables → Actions 에 `APK_SIGNING_PASSPHRASE`(직접 정한 긴 비밀번호) 를 넣으면,
+첫 빌드가 서명 키를 만들어 그 비밀번호로 암호화해 `android/signing/keystore.p12.enc` 에 올리고 이후 빌드는 모두 그 키로 서명합니다.
+같은 키라서 앱을 지우지 않고 덮어쓰기로 업데이트할 수 있습니다. 비밀번호를 바꾸거나 잃어버리면 키를 다시 만들어야 합니다.
