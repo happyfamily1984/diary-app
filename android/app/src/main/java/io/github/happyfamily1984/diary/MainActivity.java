@@ -32,7 +32,7 @@ public class MainActivity extends Activity {
     private FrameLayout root;
     private String appUrl;
     private PermissionRequest pendingMic;           // a page request waiting for the Android mic permission
-    private static final int REQ_MIC = 7, REQ_FLOATING = 8, REQ_LINK = 9;
+    private static final int REQ_MIC = 7, REQ_FLOATING = 8, REQ_LINK = 9, REQ_NOTIFY = 10;
     private String pendingRecord;                   // 배민리프레시 asked to start a recording ("diary" / "idea")
     private boolean askingLinkMic;
     private boolean enablingFloating;               // waiting for the user to grant overlay / mic permission
@@ -97,8 +97,9 @@ public class MainActivity extends Activity {
         setContentView(root);
         if (savedInstanceState == null) takeRecord(getIntent());
         String open = getIntent().getStringExtra("open");
+        if (open != null && !open.matches("diary|idea|phones")) open = null;
         if (savedInstanceState != null && open == null) webView.restoreState(savedInstanceState);
-        else webView.loadUrl(open != null ? appUrl + "#open=" + open : appUrl);
+        else webView.loadUrl(open == null ? appUrl : appUrl + ("phones".equals(open) ? "#phones" : "#open=" + open));
     }
 
     private void applySystemBars() {
@@ -252,6 +253,18 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** Reminders (phone plan discount ending, …) shown as notifications at their time. */
+        @JavascriptInterface
+        public void scheduleReminders(String json) {
+            ReminderReceiver.schedule(MainActivity.this, json);
+            if (Build.VERSION.SDK_INT >= 33 && !json.equals("[]")
+                    && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    && !floatPrefs().getBoolean("askedRemindNotif", false)) {
+                floatPrefs().edit().putBoolean("askedRemindNotif", true).apply();
+                runOnUiThread(() -> requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIFY));
+            }
+        }
+
         /** The buttons send recordings straight to the diary server with the app's token. */
         @JavascriptInterface
         public void setCredentials(String workerUrl, String token) {
@@ -301,6 +314,8 @@ public class MainActivity extends Activity {
         String open = intent.getStringExtra("open");
         if (open != null && open.matches("diary|idea"))
             webView.evaluateJavascript("location.hash='open=" + open + "'", null);
+        else if ("phones".equals(open))                 // a phone-plan reminder notification was tapped
+            webView.evaluateJavascript("location.hash='phones'", null);
     }
 
     @Override

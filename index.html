@@ -215,6 +215,38 @@
   .idea-card.done .txt { color: #6b7d6e; }
   .idea-item .done-mark { color: #2b8a3e; font-weight: 700; margin-right: 4px; }
 
+  /* ---------- my phone lines ---------- */
+  .phone-alert { display: flex; align-items: center; gap: 10px; background: #fff7e6; border: 2px solid #ffd8a8; border-radius: 20px;
+                 padding: 12px 14px; margin-bottom: 14px; cursor: pointer; box-shadow: var(--shadow); }
+  .phone-alert b { color: #d9480f; }
+  .phone-card { background: #fff; border-radius: 22px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; cursor: pointer; }
+  .phone-card .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .carrier { font-weight: 800; font-size: .85rem; border-radius: 999px; padding: 3px 10px; color: #fff; }
+  .carrier.SK { background: #ea002c; } .carrier.KT { background: #1f1f1f; } .carrier.LG { background: #e6007e; }
+  .mvno { font-weight: 700; font-size: .82rem; border-radius: 999px; padding: 3px 10px; background: #f1f3f5; color: #495057; }
+  .phone-card .num { font-size: 1.35rem; font-weight: 800; letter-spacing: .01em; margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
+  .phone-card .meta { color: #5e6078; font-size: .92rem; line-height: 1.6; }
+  .phone-card .memo { color: var(--muted); font-size: .88rem; margin-top: 4px; white-space: pre-wrap; }
+  .dday { margin-left: auto; font-weight: 800; border-radius: 999px; padding: 3px 12px; font-size: .9rem; background: #e7f5ff; color: #1c7ed6; }
+  .dday.soon { background: #fff4e6; color: #e8590c; } .dday.over { background: #f1f3f5; color: #868e96; }
+  .bar { height: 8px; border-radius: 5px; background: #eef0f7; overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, #74c0fc, #4c6ef5); }
+  .bar.soon i { background: linear-gradient(90deg, #ffc078, #fd7e14); }
+  .pform label { display: block; font-weight: 700; margin: 12px 0 4px; }
+  .pform input[type=tel], .pform input[type=text], .pform input[type=date], .pform input[type=number], .pform textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; font-size: 1rem; background: #f8f8fd; color: var(--text); }
+  .pform .inline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .pform .inline input { width: 90px; flex: none; }
+  .pform .chips button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-weight: 700; color: #6b6d86; }
+  .pform .seg3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .pform .seg3 button { border: 2px solid var(--line); background: #fff; border-radius: 14px; padding: 10px 4px; font-weight: 800; font-size: 1rem; color: #6b6d86; }
+  .pform .seg3 button.on[data-v=SK] { border-color: #ea002c; color: #ea002c; } .pform .seg3 button.on[data-v=KT] { border-color: #1f1f1f; color: #1f1f1f; }
+  .pform .seg3 button.on[data-v=LG] { border-color: #e6007e; color: #e6007e; }
+  .pform .switchrow { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+  .pform .hint { font-size: .85rem; color: var(--muted); margin-top: 4px; }
+  .pform textarea { min-height: 64px; resize: vertical; }
+  .pform .danger { color: var(--danger); border-color: #ffc9c9; }
+
   /* ---------- floating write button ---------- */
   .fab { position: fixed; right: max(18px, calc(50% - 262px)); bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 8;
          width: 64px; height: 64px; border-radius: 50%; border: 0; color: #fff; font-size: 2rem; line-height: 1; cursor: pointer;
@@ -324,6 +356,7 @@
         <button id="menuToday"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/></svg>오늘로 이동</button>
         <button id="menuFloating" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>플로팅 녹음 버튼</button>
         <button id="menuIdeas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>아이디어 모아보기</button>
+        <button id="menuPhones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>내 휴대폰 회선</button>
         <button id="menuRefresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>새로고침</button>
         <button id="menuLogout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg>이 기기에서 연결 해제</button>
         <div class="ver" id="verInfo"></div>
@@ -340,6 +373,7 @@
       </svg>
     </div>
 
+    <div id="phoneAlerts"></div>
     <div class="month-nav">
       <button class="round" id="prev" aria-label="이전 달">‹</button>
       <h1 id="title"></h1>
@@ -411,6 +445,16 @@
     <div id="ideasList"></div>
   </section>
 
+  <!-- my phone lines: carrier, opening date, discount end and reminder -->
+  <section id="phonesView" hidden>
+    <div class="ideas-top">
+      <button class="round" id="phonesBack" aria-label="뒤로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <h1>📱 내 휴대폰 회선</h1>
+      <button class="pill" id="phonesAdd">＋ 추가</button>
+    </div>
+    <div id="phonesList"></div>
+  </section>
+
   <!-- one day: entry cards -->
   <section id="dayView" hidden>
     <div class="day-top">
@@ -465,10 +509,41 @@
   </div>
 </div>
 
+<!-- add / edit a phone line -->
+<div class="sheet-back" id="phoneSheet" hidden>
+  <div class="sheet pform" role="dialog" aria-label="휴대폰 회선">
+    <div class="grip"></div>
+    <h3 id="pTitle" style="margin:0 0 4px">📱 회선 추가</h3>
+    <label for="pNum">휴대폰 번호</label>
+    <input type="tel" id="pNum" inputmode="numeric" placeholder="010-1234-5678" autocomplete="off">
+    <div class="switchrow"><label style="margin:0">알뜰폰이에요</label><button class="switch" id="pMvno" aria-label="알뜰폰"></button></div>
+    <label id="pCarrierLabel">통신사</label>
+    <div class="seg3" id="pCarrier"><button data-v="SK">SK</button><button data-v="KT">KT</button><button data-v="LG">LG</button></div>
+    <div id="pMvnoBox" hidden>
+      <label for="pMvnoName">알뜰폰 회사 이름</label>
+      <input type="text" id="pMvnoName" placeholder="예: 헬로모바일, 리브엠, 토스모바일">
+    </div>
+    <label for="pOpened">개통일</label>
+    <input type="date" id="pOpened">
+    <label for="pMonths">요금할인 기간</label>
+    <div class="inline chips"><input type="number" id="pMonths" min="0" max="60" placeholder="개월"><span>개월</span>
+      <button data-m="12">12</button><button data-m="24">24</button><button data-m="0">없음</button></div>
+    <div class="hint" id="pEndHint"></div>
+    <label for="pAlert">만료 알림</label>
+    <div class="inline chips"><span>만료</span><input type="number" id="pAlert" min="0" max="365" placeholder="일"><span>일 전</span>
+      <button data-a="7">7</button><button data-a="30">30</button><button data-a="60">60</button></div>
+    <div class="hint" id="pAlertHint"></div>
+    <label for="pMemo">메모 (선택)</label>
+    <textarea id="pMemo" rows="2" placeholder="요금제, 결합할인 등"></textarea>
+    <div class="row"><button class="pill danger" id="pDelete" hidden>삭제</button><span style="flex:1"></span>
+      <button class="pill" id="pCancel">취소</button><button class="btn-pink" id="pSave">저장</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 <script>
 // Bump on every change: open apps compare this with the published page and reload themselves.
-const APP_VERSION = "2026-11-19.1";
+const APP_VERSION = "2026-11-20.1";
 const $ = id => document.getElementById(id);
 const WD = ["월","화","수","목","금","토","일"];
 const KIND = { idea: "아이디어", diary: "일기" };
@@ -790,6 +865,176 @@ function renderIdeasView() {
 
 function openIdeas() { if (location.hash !== "#ideas") location.hash = "ideas"; else showDayFromHash(); }
 
+// ---------- my phone lines (diary/phones.json) ----------
+const PHONES = "diary/phones.json";
+const CARRIER = { SK: "SKT", KT: "KT", LG: "LG U+" };
+let phones = null, phonesOpen = false, phoneEdit = null;
+
+// Same as updateMonth, for any JSON list file.
+async function updateJsonList(path, mutate, message) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { entries, sha } = await readForWrite(path);
+    mutate(entries);
+    const res = await gh(`/contents/${path}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, branch: "main", sha, content: b64encode(JSON.stringify(entries, null, 1) + "\n") }),
+    });
+    if (res.ok) return entries;
+    if (res.status === 409 || res.status === 422) continue;
+    if (res.status === 403 || res.status === 404) throw new Error("저장 권한이 없어요. 토큰의 Contents 권한을 'Read and write' 로 바꿔 주세요.");
+    throw new Error(`저장 실패 (${res.status})`);
+  }
+  throw new Error("다른 저장과 겹쳤어요. 잠시 후 다시 시도해 주세요.");
+}
+
+const fmtPhone = n => { const d = (n || "").replace(/\D/g, "");
+  return d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}` : d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : d; };
+const isoDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseDate = iso => { const [a, b, c] = iso.split("-").map(Number); return new Date(a, b - 1, c); };
+function addMonths(iso, months) {           // 2025-01-31 + 1 → 2025-02-28 (end of a shorter month)
+  const d = parseDate(iso), target = new Date(d.getFullYear(), d.getMonth() + months, 1);
+  const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  return isoDate(new Date(target.getFullYear(), target.getMonth(), Math.min(d.getDate(), last)));
+}
+const daysUntil = iso => Math.round((parseDate(iso) - parseDate(todayIso)) / 86400e3);
+const addDays = (iso, n) => { const d = parseDate(iso); d.setDate(d.getDate() + n); return isoDate(d); };
+
+function phoneInfo(p) {
+  const end = p.opened && p.months > 0 ? addMonths(p.opened, p.months) : null;
+  const left = end ? daysUntil(end) : null;
+  const alertDate = end && p.alertDays > 0 ? addDays(end, -p.alertDays) : null;
+  const soon = left != null && left >= 0 && left <= Math.max(p.alertDays || 0, 7);
+  return { end, left, alertDate, soon, over: left != null && left < 0 };
+}
+const carrierText = p => p.mvno ? `알뜰폰 · ${CARRIER[p.carrier]}망${p.mvnoName ? " · " + p.mvnoName : ""}` : CARRIER[p.carrier];
+
+async function loadPhones(force) {
+  if (phones && !force) return phones;
+  const text = await readFile(PHONES).catch(() => null);
+  phones = text ? JSON.parse(text) : [];
+  scheduleReminders();
+  return phones;
+}
+
+// Phone notifications (Android app): on the alert day and on the last day, at 9 am.
+function scheduleReminders() {
+  if (!native || !native.scheduleReminders || !phones) return;
+  const list = [];
+  for (const p of phones) {
+    const info = phoneInfo(p);
+    if (!info.end) continue;
+    const at = iso => parseDate(iso).getTime() + 9 * 3600e3;
+    const who = `${CARRIER[p.carrier]}${p.mvno ? " 알뜰폰" : ""} ${fmtPhone(p.number)}`;
+    if (info.alertDate) list.push({ id: `${p.id}-alert`, at: at(info.alertDate), open: "phones",
+      title: `📱 요금할인 ${p.alertDays}일 뒤 끝나요`, text: `${who} — ${info.end} 요금할인 종료. 재약정·기기변경을 확인해 보세요.` });
+    list.push({ id: `${p.id}-end`, at: at(info.end), open: "phones",
+      title: "📱 오늘 요금할인이 끝나요", text: `${who} — 오늘(${info.end}) 요금할인이 끝나요.` });
+  }
+  try { native.scheduleReminders(JSON.stringify(list)); } catch {}
+}
+
+function renderPhoneAlerts() {
+  const box = $("phoneAlerts"); box.replaceChildren();
+  for (const p of phones || []) {
+    const info = phoneInfo(p);
+    if (!info.soon) continue;
+    const a = el("div", "phone-alert");
+    a.append(el("span", null, "📱"), el("span", null, `${CARRIER[p.carrier]}${p.mvno ? " 알뜰폰" : ""} ${fmtPhone(p.number)} 요금할인 `));
+    a.lastChild.append(el("b", null, info.left === 0 ? "오늘 종료" : `D-${info.left}`), ` (${info.end})`);
+    a.onclick = openPhones;
+    box.append(a);
+  }
+}
+
+function renderPhones() {
+  renderPhoneAlerts();
+  if (!phonesOpen) return;
+  const listEl = $("phonesList"); listEl.replaceChildren();
+  if (!phones) { listEl.append(el("div", "entry empty", "불러오는 중…")); return; }
+  if (!phones.length) listEl.append(el("div", "entry empty", "내 명의로 개통한 휴대폰을 추가해 두면\n요금할인 만료 전에 알려 드려요.\n＋ 추가를 눌러 보세요."));
+  const sorted = phones.slice().sort((a, b) => (phoneInfo(a).left ?? 1e9) - (phoneInfo(b).left ?? 1e9));
+  for (const p of sorted) {
+    const info = phoneInfo(p), card = el("div", "phone-card"), top = el("div", "top");
+    top.append(el("span", "carrier " + p.carrier, CARRIER[p.carrier]));
+    if (p.mvno) top.append(el("span", "mvno", `알뜰폰${p.mvnoName ? " · " + p.mvnoName : ""}`));
+    if (info.end) top.append(el("span", "dday" + (info.over ? " over" : info.soon ? " soon" : ""),
+      info.over ? "할인 끝남" : info.left === 0 ? "오늘 종료" : `D-${info.left}`));
+    card.append(top, el("div", "num", fmtPhone(p.number)));
+    const meta = el("div", "meta");
+    meta.append(el("div", null, `개통일 ${p.opened || "-"}`));
+    if (info.end) {
+      meta.append(el("div", null, `요금할인 ${p.months}개월 → ${info.end} 종료`));
+      if (info.alertDate) meta.append(el("div", null, `🔔 만료 ${p.alertDays}일 전 알림 (${info.alertDate})`));
+    } else meta.append(el("div", null, "요금할인 없음"));
+    card.append(meta);
+    if (info.end && p.opened) {
+      const total = daysUntil(info.end) - daysUntil(p.opened), done = -daysUntil(p.opened);
+      const bar = el("div", "bar" + (info.soon ? " soon" : "")), fill = el("i");
+      fill.style.width = `${Math.max(0, Math.min(100, done / total * 100))}%`;
+      bar.append(fill); card.append(bar);
+    }
+    if (p.memo) card.append(el("div", "memo", p.memo));
+    card.onclick = () => openPhoneSheet(p);
+    listEl.append(card);
+  }
+}
+
+function openPhones() { if (location.hash !== "#phones") location.hash = "phones"; else showDayFromHash(); }
+
+function openPhoneSheet(p) {
+  phoneEdit = p ? { ...p } : { id: "p" + Date.now(), number: "", carrier: "SK", mvno: false, mvnoName: "", opened: todayIso, months: 24, alertDays: 30, memo: "", isNew: true };
+  const e = phoneEdit;
+  $("pTitle").textContent = e.isNew ? "📱 회선 추가" : "📱 회선 수정";
+  $("pNum").value = fmtPhone(e.number); $("pMvnoName").value = e.mvnoName || ""; $("pOpened").value = e.opened || "";
+  $("pMonths").value = e.months ?? ""; $("pAlert").value = e.alertDays ?? ""; $("pMemo").value = e.memo || "";
+  $("pDelete").hidden = !!e.isNew;
+  renderPhoneSheet();
+  $("phoneSheet").hidden = false; document.body.classList.add("sheet-open");
+  history.pushState({ sheet: "phone" }, "");
+}
+function renderPhoneSheet() {
+  const e = phoneEdit; if (!e) return;
+  $("pMvno").classList.toggle("on", !!e.mvno);
+  $("pMvnoBox").hidden = !e.mvno;
+  $("pCarrierLabel").textContent = e.mvno ? "어느 통신사 망인가요?" : "통신사";
+  for (const b of $("pCarrier").children) b.classList.toggle("on", b.dataset.v === e.carrier);
+  const months = +$("pMonths").value || 0, alertDays = +$("pAlert").value || 0, opened = $("pOpened").value;
+  const end = opened && months > 0 ? addMonths(opened, months) : null;
+  $("pEndHint").textContent = end ? `→ ${end} 에 요금할인이 끝나요 (${daysUntil(end) >= 0 ? `D-${daysUntil(end)}` : "이미 끝남"})` : "요금할인이 없으면 비워 두세요";
+  $("pAlertHint").textContent = end && alertDays > 0 ? `🔔 ${addDays(end, -alertDays)} 아침 9시에 알려 드려요 (종료일 당일에도 한 번 더)` : "";
+}
+function closePhoneSheet(fromBack) {
+  if (!phoneEdit) return;
+  phoneEdit = null; $("phoneSheet").hidden = true; document.body.classList.remove("sheet-open");
+  if (!fromBack) history.back();
+}
+async function savePhone() {
+  const e = phoneEdit, number = $("pNum").value.replace(/\D/g, "");
+  if (number.length < 9 || number.length > 11) { toast("휴대폰 번호를 확인해 주세요"); return; }
+  if (!$("pOpened").value) { toast("개통일을 넣어 주세요"); return; }
+  const item = { id: e.id, number, carrier: e.carrier, mvno: !!e.mvno, mvnoName: e.mvno ? $("pMvnoName").value.trim() : "",
+                 opened: $("pOpened").value, months: +$("pMonths").value || 0, alertDays: +$("pAlert").value || 0,
+                 memo: $("pMemo").value.trim() };
+  $("pSave").disabled = true;
+  try {
+    phones = await updateJsonList(PHONES, list => {
+      const i = list.findIndex(x => x.id === item.id);
+      if (i >= 0) list[i] = item; else list.push(item);
+    }, e.isNew ? "diary: add phone line" : "diary: edit phone line");
+    toast("저장했어요"); closePhoneSheet(false); scheduleReminders(); renderPhones();
+  } catch (err) { toast(err.message); }
+  finally { $("pSave").disabled = false; }
+}
+async function deletePhone() {
+  if (!confirm("이 회선을 삭제할까요?")) return;
+  const id = phoneEdit.id;
+  try {
+    phones = await updateJsonList(PHONES, list => { const i = list.findIndex(x => x.id === id); if (i >= 0) list.splice(i, 1); },
+                                  "diary: delete phone line");
+    toast("삭제했어요"); closePhoneSheet(false); scheduleReminders(); renderPhones();
+  } catch (err) { toast(err.message); }
+}
+
 // ---------- day screen ----------
 function openDay(iso) {
   if (location.hash !== `#day=${iso}`) location.hash = `day=${iso}`;   // back button returns home
@@ -817,6 +1062,16 @@ async function openFromButton(kind) {
 async function showDayFromHash() {
   const op = location.hash.match(/^#open=(diary|idea)$/);
   if (op) return openFromButton(op[1]);
+  phonesOpen = location.hash === "#phones";
+  $("phonesView").hidden = !phonesOpen;
+  if (phonesOpen) {
+    ideasOpen = false; $("ideasView").hidden = true;
+    viewDay = null; $("dayView").hidden = true; $("app").hidden = true; window.scrollTo(0, 0);
+    renderPhones();
+    try { await loadPhones(true); } catch (e) { toast(e.message); }
+    renderPhones();
+    return;
+  }
   ideasOpen = location.hash === "#ideas";
   $("ideasView").hidden = !ideasOpen;
   if (ideasOpen) {
@@ -1254,6 +1509,7 @@ function start() {
   shareCredentials();
   $("setup").hidden = true; $("app").hidden = false; $("fab").hidden = false;
   show().then(() => { if (location.hash) showDayFromHash(); });
+  loadPhones().then(renderPhones).catch(() => {});
 }
 
 function goToday() {
@@ -1296,6 +1552,19 @@ $("verInfo").textContent = `버전 ${APP_VERSION}`;
 $("backBtn").onclick = () => { if (history.length > 1 && location.hash) history.back(); else location.hash = ""; };
 $("dayAdd").onclick = () => openComposer({ date: viewDay });
 $("datePick").onchange = () => { const v = $("datePick").value; if (v) location.replace(`#day=${v}`); };
+$("menuPhones").onclick = () => { closeMenu(); openPhones(); };
+$("phonesBack").onclick = () => { if (history.length > 1 && location.hash) history.back(); else location.hash = ""; };
+$("phonesAdd").onclick = () => openPhoneSheet(null);
+$("pMvno").onclick = () => { phoneEdit.mvno = !phoneEdit.mvno; renderPhoneSheet(); };
+for (const b of $("pCarrier").children) b.onclick = () => { phoneEdit.carrier = b.dataset.v; renderPhoneSheet(); };
+for (const b of document.querySelectorAll("#phoneSheet [data-m]")) b.onclick = () => { $("pMonths").value = b.dataset.m === "0" ? "" : b.dataset.m; renderPhoneSheet(); };
+for (const b of document.querySelectorAll("#phoneSheet [data-a]")) b.onclick = () => { $("pAlert").value = b.dataset.a; renderPhoneSheet(); };
+for (const id of ["pMonths", "pAlert", "pOpened"]) $(id).addEventListener("input", renderPhoneSheet);
+$("pNum").addEventListener("blur", () => { $("pNum").value = fmtPhone($("pNum").value); });
+$("pSave").onclick = savePhone;
+$("pDelete").onclick = deletePhone;
+$("pCancel").onclick = () => closePhoneSheet(false);
+$("phoneSheet").onclick = ev => { if (ev.target === $("phoneSheet")) closePhoneSheet(false); };
 $("ideasBack").onclick = () => { if (history.length > 1 && location.hash) history.back(); else location.hash = ""; };
 $("ideasAdd").onclick = () => openComposer({ kind: "idea", date: todayIso });
 for (const b of $("ideaFilters").children) b.onclick = () => { ideaFilter = b.dataset.f; renderIdeasView(); };
@@ -1313,6 +1582,7 @@ $("cText").addEventListener("keydown", heal.key);
 
 // Back button: closes the sheet first, then the day screen (hash), then the app asks to quit.
 window.addEventListener("popstate", () => {
+  if (phoneEdit) { closePhoneSheet(true); return; }
   if (floatOpen) { closeFloating(true); return; }
   if (!composer) return;
   if (composerDirty() && !confirm("작성 중인 내용을 버릴까요?")) { history.pushState({ composer: true }, ""); return; }
